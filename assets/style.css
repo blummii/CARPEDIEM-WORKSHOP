@@ -1,0 +1,221 @@
+/* --- GIAO DIỆN CHUNG --- */
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #fff5f7;
+    color: #6d5d5d;
+}
+
+/* --- HERO SECTION --- */
+.hero {
+    position: relative;
+    height: 450px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.hero img { width: 100%; object-fit: cover; filter: brightness(0.9); }
+.hero-text {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 15px 30px;
+    border-radius: 50px;
+    color: #d4a5a5;
+    font-size: 28px;
+    font-weight: bold;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    z-index: 10;
+}
+
+/* --- DANH SÁCH WORKSHOP --- */
+.container {
+    width: 90%;
+    max-width: 1200px;
+    margin: 50px auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+}
+.item {
+    background: white;
+    padding: 20px;
+    border-radius: 25px;
+    box-shadow: 0 10px 20px rgba(212, 165, 165, 0.1);
+    transition: 0.4s;
+}
+.item img { width: 100%; height: 200px; object-fit: cover; border-radius: 20px; }
+.btn {
+    background: #f8d7da; color: #842029; border: none;
+    padding: 10px 20px; border-radius: 12px;
+    font-weight: bold; cursor: pointer; transition: 0.3s;
+}
+.btn:hover { background: #d4a5a5; color: white; }
+
+/* --- HỆ THỐNG POPUP --- */
+.popup {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: none; /* Mặc định ẩn, JS dùng flex */
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.popup-content {
+    background: #fffcfc;
+    padding: 25px;
+    border-radius: 25px;
+    width: 90%;
+    max-width: 400px;
+    position: relative;
+    box-shadow: 0 15px 30px rgba(0,0,0,0.3);
+    border: 2px solid #f8d7da;
+    text-align: center;
+}
+
+.close {
+    position: absolute; top: 10px; right: 15px;
+    font-size: 28px; cursor: pointer; color: #d4a5a5;
+}
+
+/* --- SƠ ĐỒ GHẾ (QUAN TRỌNG NHẤT) --- */
+.seat-grid {
+    display: grid !important;
+    grid-template-columns: repeat(5, 1fr) !important; /* Ép 5 cột */
+    gap: 10px;
+    margin: 20px auto;
+    width: 250px; /* Độ rộng vừa đủ cho 5 cột ghế */
+    justify-content: center;
+}
+
+.seat {
+    width: 40px;
+    height: 40px;
+    background-color: #eeeeee;
+    border-radius: 8px;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.2s;
+    border: none;
+}
+
+.seat.available:hover { background-color: #f8d7da; transform: scale(1.1); }
+.seat.selected { background-color: #d4a5a5 !important; color: white !important; }
+.seat.occupied { background-color: #cccccc !important; color: #999; cursor: not-allowed; }
+
+.screen {
+    background: #f8d7da;
+    padding: 5px;
+    border-radius: 5px;
+    font-size: 11px;
+    color: #842029;
+    margin: 0 auto 15px auto;
+    width: 240px;
+}
+
+.seat-legend {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.seat-demo { width: 15px; height: 15px; border-radius: 3px; }
+.seat-demo.available { background: #eeeeee; }
+.seat-demo.selected { background: #d4a5a5; }
+.seat-demo.occupied { background: #cccccc; }
+
+/* Input form */
+.popup input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #eee;
+    border-radius: 10px;
+    box-sizing: border-box;
+}
+/* --- GIAO DIỆN FORM ĐĂNG NHẬP / ĐĂNG KÝ --- */
+
+/* Căn giữa toàn bộ trang login/register */
+.auth-container {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #fff5f7; /* Màu nền hồng nhạt giống index */
+}
+
+.auth-card {
+    background: white;
+    padding: 40px;
+    border-radius: 30px;
+    box-shadow: 0 10px 25px rgba(212, 165, 165, 0.2);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+    border: 1px solid #f8d7da;
+}
+
+.auth-card h2 {
+    color: #d4a5a5;
+    margin-bottom: 25px;
+    font-size: 24px;
+}
+
+.auth-form input {
+    width: 100%;
+    padding: 12px 15px;
+    margin-bottom: 15px;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    box-sizing: border-box; /* Giữ input không bị tràn */
+    outline: none;
+    transition: 0.3s;
+}
+
+.auth-form input:focus {
+    border-color: #d4a5a5;
+    box-shadow: 0 0 5px rgba(212, 165, 165, 0.3);
+}
+
+.auth-btn {
+    width: 100%;
+    background: #f8d7da;
+    color: #842029;
+    border: none;
+    padding: 12px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 16px;
+    cursor: pointer;
+    transition: 0.3s;
+    margin-top: 10px;
+}
+
+.auth-btn:hover {
+    background: #d4a5a5;
+    color: white;
+}
+
+.auth-footer {
+    margin-top: 20px;
+    font-size: 14px;
+    color: #888;
+}
+
+.auth-footer a {
+    color: #d4a5a5;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.auth-footer a:hover {
+    text-decoration: underline;
+}
