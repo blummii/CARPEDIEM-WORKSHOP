@@ -1,6 +1,7 @@
 <?php 
 session_start(); 
-include("config/db.php"); 
+include("config/db.php");
+require_once __DIR__ . '/includes/workshop_date.php';
 
 // Xử lý thông tin người dùng từ Session
 $isLoggedIn = isset($_SESSION['user']);
@@ -63,7 +64,7 @@ $user = $isLoggedIn ? $_SESSION['user'] : null;
                            JOIN lichworkshop l ON dk.Ma_lich_workshop = l.Ma_lich_workshop
                            JOIN chudeworkshop c ON l.Ma_chu_de = c.Ma_chu_de
                            WHERE dk.Ma_khach_hang = '$ma_kh'
-                           ORDER BY dk.Thoi_gian_tao DESC";
+                           ORDER BY l.Ngay_to_chuc DESC, dk.Thoi_gian_tao DESC";
             $res_booked = $conn->query($sql_booked);
 
             if ($res_booked && $res_booked->num_rows > 0): ?>
@@ -81,7 +82,7 @@ $user = $isLoggedIn ? $_SESSION['user'] : null;
                         <?php while ($row = $res_booked->fetch_assoc()): ?>
                             <tr>
                                 <td><strong><?php echo $row['Ten_chu_de']; ?></strong></td>
-                                <td><?php echo date("d/m/Y", strtotime($row['Ngay_to_chuc'])); ?></td>
+                                <td><?php echo htmlspecialchars(workshop_fmt_ngay_vn($row['Ngay_to_chuc'] ?? null)); ?></td>
                                 <td><?php echo $row['So_nguoi_tham_gia']; ?> ghế</td>
                                 <td><?php echo number_format($row['Tong_tien'], 0, ',', '.'); ?>đ</td>
                                 <td><span style="color: green;"><?php echo $row['Trang_thai_thanh_toan']; ?></span></td>
@@ -113,12 +114,12 @@ $user = $isLoggedIn ? $_SESSION['user'] : null;
                     <div style="margin-top: 15px;">
                         <?php
                         $ma_cd = $cd['Ma_chu_de'];
-                        $lich = $conn->query("SELECT * FROM lichworkshop WHERE Ma_chu_de='$ma_cd'");
+                        $lich = $conn->query("SELECT * FROM lichworkshop WHERE Ma_chu_de='$ma_cd' ORDER BY Ngay_to_chuc ASC");
                         while($l = $lich->fetch_assoc()){
                             $conlai = $l['So_luong_toi_da'] - $l['So_luong_da_dang_ky'];
                         ?>
                             <div style="padding: 10px; border: 1px solid #f8d7da; border-radius: 10px; margin-bottom: 10px;">
-                                <small>📅 Ngày: <?php echo date("d/m/Y", strtotime($l['Ngay_to_chuc'])); ?></small><br>
+                                <small>📅 Ngày: <?php echo htmlspecialchars(workshop_fmt_ngay_vn($l['Ngay_to_chuc'] ?? null)); ?></small><br>
                                 <?php if($conlai > 0): ?>
                                     <button class="btn" onclick="openPopup('<?php echo $l['Ma_lich_workshop']; ?>', <?php echo $l['So_luong_toi_da']; ?>, <?php echo $l['So_luong_da_dang_ky']; ?>)">
                                         Chọn ghế (Còn <?php echo $conlai; ?> chỗ)

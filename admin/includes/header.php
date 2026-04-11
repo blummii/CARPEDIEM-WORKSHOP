@@ -1,6 +1,7 @@
 <?php
 // Admin layout header (sidebar + topbar)
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
+$isWorkshopSection = (strncmp($currentPage, 'workshop', 8) === 0);
 ?>
 <!doctype html>
 <html>
@@ -31,6 +32,7 @@ $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
         <li><a href="accounts.php" <?php echo ($currentPage === 'accounts.php') ? 'class="active"' : ''; ?>>Quản lý tài khoản</a></li>
         <li><a href="orders.php" <?php echo ($currentPage === 'orders.php') ? 'class="active"' : ''; ?>>Quản lý đơn hàng</a></li>
         <li><a href="inventory.php" <?php echo ($currentPage === 'inventory.php') ? 'class="active"' : ''; ?>>Quản lý tồn kho</a></li>
+        <li><a href="workshop.php" <?php echo $isWorkshopSection ? 'class="active"' : ''; ?>>Quản lý Workshop</a></li>
       </ul>
     </aside>
     <div class="admin-main">
