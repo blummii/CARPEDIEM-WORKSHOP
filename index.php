@@ -9,6 +9,8 @@ $user = $isLoggedIn ? $_SESSION['user'] : null;
 <!DOCTYPE html>
 <html lang="vi">
 <head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Carpe Diem - Tiệm Nến Thơm</title>
