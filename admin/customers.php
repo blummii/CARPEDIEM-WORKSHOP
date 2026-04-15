@@ -21,6 +21,17 @@ function genCode($db, $prefix, $table, $col) {
     return $prefix . str_pad($num + 1, 3, '0', STR_PAD_LEFT);
 }
 
+function customer_table_name(mysqli $conn): string
+{
+    foreach (['KhachHang', 'khachhang'] as $tb) {
+        $chk = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($tb) . "'");
+        if ($chk && $chk->num_rows > 0) {
+            return $tb;
+        }
+    }
+    return 'KhachHang';
+}
+
 /**
  * Xóa khách hàng: tìm mọi bảng có cột ma_khach_hang (mọi kiểu tên bảng), xóa con trước, bảng khách sau.
  * Tạm tắt FOREIGN_KEY_CHECKS trong session để không vướng thứ tự / FK khai báo sai trong CSDL.
@@ -140,6 +151,7 @@ function delete_khach_hang_cascade(mysqli $conn, string $ma): array
 
 // Handle add / edit / delete
 $message = '';
+$khTable = customer_table_name($conn);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   if (!check_csrf($_POST['_csrf'] ?? '')) die('CSRF token không hợp lệ');
   $action = $_POST['action'];
@@ -147,17 +159,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $ten = $_POST['ten'] ?? '';
         $phone = $_POST['phone'] ?? '';
         $email = $_POST['email'] ?? '';
-        if (isset($pdo)) {
-            $ma = genCode($pdo, 'KH', 'KhachHang', 'Ma_khach_hang');
-            $stmt = $pdo->prepare('INSERT INTO KhachHang (Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email) VALUES (?, ?, ?, ?)');
-            $stmt->execute([$ma, $ten, $phone, $email]);
+        $phoneNorm = preg_replace('/\D+/', '', (string)$phone);
+        if ($phoneNorm === '') {
+            $message = 'Số điện thoại không hợp lệ.';
         } else {
-            $ma = genCode($conn, 'KH', 'KhachHang', 'Ma_khach_hang');
-            $stmt = $conn->prepare('INSERT INTO KhachHang (Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email) VALUES (?, ?, ?, ?)');
-            $stmt->bind_param('ssss', $ma, $ten, $phone, $email);
-            $stmt->execute();
+            // Chặn trùng SĐT: nếu đã có trong CSDL thì không cho thêm.
+            $exists = false;
+            try {
+                if (isset($pdo)) {
+                    $chk = $pdo->prepare('SELECT 1 FROM KhachHang WHERE REPLACE(REPLACE(REPLACE(So_dien_thoai, " ", ""), ".", ""), "-", "") = ? LIMIT 1');
+                    $chk->execute([$phoneNorm]);
+                    $exists = (bool)$chk->fetchColumn();
+                } else {
+                    $sqlChk = "SELECT 1
+                      FROM `{$khTable}`
+                      WHERE REPLACE(REPLACE(REPLACE(So_dien_thoai, ' ', ''), '.', ''), '-', '') = ?
+                      LIMIT 1";
+                    $chk = $conn->prepare($sqlChk);
+                    if ($chk) {
+                        $chk->bind_param('s', $phoneNorm);
+                        $chk->execute();
+                        $res = $chk->get_result();
+                        $exists = ($res && $res->num_rows > 0);
+                    }
+                }
+            } catch (Throwable $e) {
+                // Nếu check lỗi thì coi như không tồn tại, để insert bắt lỗi (nhưng vẫn báo rõ khi insert fail).
+            }
+
+            if ($exists) {
+                $message = 'Không thể thêm: Số điện thoại đã tồn tại trong hệ thống.';
+            } else {
+        // Giữ form thêm khách đơn giản: không nhập mật khẩu.
+        // Nếu DB bắt buộc Mat_khau thì tự sinh mật khẩu mặc định nội bộ.
+        $passwordSeed = 'KH@' . preg_replace('/\D+/', '', $phone) . '#123';
+        $passwordHash = password_hash($passwordSeed, PASSWORD_DEFAULT);
+        try {
+            if (isset($pdo)) {
+                $ma = genCode($pdo, 'KH', 'KhachHang', 'Ma_khach_hang');
+                try {
+                    $stmt = $pdo->prepare('INSERT INTO KhachHang (Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email, Mat_khau, Thoi_gian_tao) VALUES (?, ?, ?, ?, ?, NOW())');
+                    $stmt->execute([$ma, $ten, $phone, $email, $passwordHash]);
+                } catch (Throwable $e) {
+                    $stmt = $pdo->prepare('INSERT INTO KhachHang (Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email, Mat_khau) VALUES (?, ?, ?, ?, ?)');
+                    $stmt->execute([$ma, $ten, $phone, $email, $passwordHash]);
+                }
+            } else {
+                $ma = genCode($conn, 'KH', $khTable, 'Ma_khach_hang');
+                $stmt = $conn->prepare("INSERT INTO `{$khTable}` (Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email, Mat_khau, Thoi_gian_tao) VALUES (?, ?, ?, ?, ?, NOW())");
+                if ($stmt) {
+                    $stmt->bind_param('sssss', $ma, $ten, $phone, $email, $passwordHash);
+                    $stmt->execute();
+                } else {
+                    $stmt2 = $conn->prepare("INSERT INTO `{$khTable}` (Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email, Mat_khau) VALUES (?, ?, ?, ?, ?)");
+                    if (!$stmt2) {
+                        throw new RuntimeException($conn->error);
+                    }
+                    $stmt2->bind_param('sssss', $ma, $ten, $phone, $email, $passwordHash);
+                    $stmt2->execute();
+                }
+            }
+            $message = 'Đã thêm khách hàng.';
+        } catch (Throwable $e) {
+            $message = 'Thêm khách hàng lỗi: ' . $e->getMessage();
         }
-        $message = 'Đã thêm khách hàng.';
+            }
+        }
     } elseif ($action === 'edit') {
         $ma = $_POST['ma'] ?? '';
         $ten = $_POST['ten'] ?? '';
@@ -167,7 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $u = $pdo->prepare('UPDATE KhachHang SET Ten_khach_hang = ?, So_dien_thoai = ?, Email = ? WHERE Ma_khach_hang = ?');
             $u->execute([$ten, $phone, $email, $ma]);
         } else {
-            $u = $conn->prepare('UPDATE KhachHang SET Ten_khach_hang = ?, So_dien_thoai = ?, Email = ? WHERE Ma_khach_hang = ?');
+            $u = $conn->prepare("UPDATE `{$khTable}` SET Ten_khach_hang = ?, So_dien_thoai = ?, Email = ? WHERE Ma_khach_hang = ?");
             $u->bind_param('ssss', $ten, $phone, $email, $ma);
             $u->execute();
         }
@@ -225,7 +292,7 @@ if ($q !== '') {
         $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
         $like = "%$q%";
-        $st = $conn->prepare("SELECT * FROM KhachHang WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ? ORDER BY Thoi_gian_tao DESC");
+        $st = $conn->prepare("SELECT * FROM `{$khTable}` WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ? ORDER BY Thoi_gian_tao DESC");
         $st->bind_param('ss', $like, $like);
         $st->execute();
         $res = $st->get_result();
@@ -236,7 +303,7 @@ if ($q !== '') {
         $stmt = $pdo->query('SELECT * FROM KhachHang ORDER BY Thoi_gian_tao DESC LIMIT 100');
         $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        $res = $conn->query('SELECT * FROM KhachHang ORDER BY Thoi_gian_tao DESC LIMIT 100');
+        $res = $conn->query("SELECT * FROM `{$khTable}` ORDER BY Thoi_gian_tao DESC LIMIT 100");
         while ($r = $res->fetch_assoc()) $customers[] = $r;
     }
 }

@@ -1,6 +1,7 @@
 <?php
 require 'includes/auth.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/includes/workshop_schema.php';
 include 'includes/header.php';
 
 function dash_money(float $v): string
@@ -46,8 +47,14 @@ $recentOrders = [];
 $lowStockItems = [];
 $topProducts = [];
 $revenueByMonth = [];
+$workshopActiveTopics = 0;
+$workshopUpcomingSchedules = 0;
+$workshopRegistrationsMonth = 0;
+$workshopRevenue = 0.0;
 
 if (isset($conn) && $conn instanceof mysqli) {
+    workshop_ensure_schema($conn);
+
     $r = $conn->query("SELECT COALESCE(SUM(Tong_tien), 0) AS s FROM DonHang WHERE Trang_thai = 'completed'");
     if ($r && ($row = $r->fetch_assoc())) {
         $totalRevenue = (float)$row['s'];
@@ -134,6 +141,31 @@ if (isset($conn) && $conn instanceof mysqli) {
         $key = $d->format('Y-m');
         $revenueByMonth[] = ['ym' => $key, 'rev' => $byYm[$key] ?? 0.0];
     }
+
+    $r = $conn->query("SELECT COUNT(*) AS c FROM chudeworkshop WHERE Trang_thai = 'Active'");
+    if ($r && ($row = $r->fetch_assoc())) {
+        $workshopActiveTopics = (int)($row['c'] ?? 0);
+    }
+
+    $r = $conn->query('SELECT COUNT(*) AS c FROM lichworkshop WHERE DATE(Ngay_to_chuc) >= CURDATE()');
+    if ($r && ($row = $r->fetch_assoc())) {
+        $workshopUpcomingSchedules = (int)($row['c'] ?? 0);
+    }
+
+    $r = $conn->query("SELECT COALESCE(SUM(So_nguoi_tham_gia), 0) AS c
+        FROM dangkyworkshop
+        WHERE Thoi_gian_tao >= DATE_FORMAT(NOW(), '%Y-%m-01')
+          AND Thoi_gian_tao < DATE_ADD(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 1 MONTH)");
+    if ($r && ($row = $r->fetch_assoc())) {
+        $workshopRegistrationsMonth = (int)($row['c'] ?? 0);
+    }
+
+    $r = $conn->query("SELECT COALESCE(SUM(Tong_tien), 0) AS s
+        FROM dangkyworkshop
+        WHERE LOWER(TRIM(COALESCE(Trang_thai_thanh_toan, ''))) IN ('đã thanh toán', 'da thanh toan', 'paid', 'completed')");
+    if ($r && ($row = $r->fetch_assoc())) {
+        $workshopRevenue = (float)($row['s'] ?? 0);
+    }
 }
 
 $chartLabels = [];
@@ -168,6 +200,29 @@ $chartHasData = array_sum($chartValues) > 0;
 			<div class="card-title">TỒN KHO THẤP</div>
 			<div class="card-value"><?php echo (int)$lowStockCount; ?> SP</div>
 			<div class="card-note" style="font-size:12px;color:#a88;margin-top:6px;">Tồn không vượt quá mức tối thiểu</div>
+		</div>
+	</div>
+
+	<div class="dash-row dash-cards">
+		<div class="card">
+			<div class="card-title">WORKSHOP ĐANG MỞ</div>
+			<div class="card-value"><?php echo (int)$workshopActiveTopics; ?></div>
+			<div class="card-note" style="font-size:12px;color:#a88;margin-top:6px;">Số chủ đề đang nhận đăng ký</div>
+		</div>
+		<div class="card">
+			<div class="card-title">LỊCH SẮP DIỄN RA</div>
+			<div class="card-value"><?php echo (int)$workshopUpcomingSchedules; ?></div>
+			<div class="card-note" style="font-size:12px;color:#a88;margin-top:6px;">Từ hôm nay trở đi</div>
+		</div>
+		<div class="card">
+			<div class="card-title">LƯỢT ĐK WORKSHOP</div>
+			<div class="card-value"><?php echo (int)$workshopRegistrationsMonth; ?></div>
+			<div class="card-note" style="font-size:12px;color:#a88;margin-top:6px;">Tổng ghế đăng ký trong tháng</div>
+		</div>
+		<div class="card">
+			<div class="card-title">DOANH THU WORKSHOP</div>
+			<div class="card-value"><?php echo htmlspecialchars(dash_money($workshopRevenue)); ?></div>
+			<div class="card-note" style="font-size:12px;color:#a88;margin-top:6px;">Chỉ đơn workshop đã thanh toán</div>
 		</div>
 	</div>
 

@@ -1,10 +1,17 @@
 let selectedSeats = [];
-const pricePerSeat = 350000; // Bạn có thể thay đổi giá ở đây
+let currentPricePerSeat = 0;
 
 // Hàm mở Popup
-function openPopup(id, maxSeats, occupiedCount) {
+function openPopup(id, maxSeats, occupiedCount, pricePerSeat) {
     const popup = document.getElementById("popup");
     const grid = document.getElementById("seat-grid");
+    currentPricePerSeat = Number(pricePerSeat) || 0;
+    if (currentPricePerSeat <= 0) {
+        const btn = document.querySelector('[data-lich="' + String(id) + '"]');
+        if (btn) {
+            currentPricePerSeat = Number(btn.getAttribute("data-gia")) || 0;
+        }
+    }
     
     // Hiển thị popup dạng flex để căn giữa
     popup.style.display = "flex";
@@ -64,7 +71,7 @@ function updateUI() {
     if (selectedSeats.length > 0) {
         inputSeats.value = selectedSeats.join(",");
         displaySeats.innerText = selectedSeats.sort((a,b) => a-b).join(", ");
-        displayTotal.innerText = (selectedSeats.length * pricePerSeat).toLocaleString() + "đ";
+        displayTotal.innerText = (selectedSeats.length * currentPricePerSeat).toLocaleString() + "đ";
     } else {
         inputSeats.value = "";
         displaySeats.innerText = "Chưa chọn";

@@ -33,25 +33,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if ($ten === '') {
             $message = 'Vui lòng nhập tên workshop.';
         } else {
-            $ma = workshop_gen_ma_chu_de($conn);
-            $st = $conn->prepare('INSERT INTO chudeworkshop (Ma_chu_de, Ten_chu_de, Mo_ta, Gia, Trang_thai, Dia_diem, Thoi_gian_mo_ta, So_luong_mac_dinh) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             $okIns = false;
-            if ($st) {
+            $lastErr = '';
+            $lastNo = 0;
+            $ma = '';
+
+            for ($t = 0; $t < 10; $t++) {
+                $ma = workshop_gen_ma_chu_de($conn);
+                $st = $conn->prepare('INSERT INTO chudeworkshop (Ma_chu_de, Ten_chu_de, Mo_ta, Gia, Trang_thai, Dia_diem, Thoi_gian_mo_ta, So_luong_mac_dinh) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                if (!$st) {
+                    $lastErr = $conn->error;
+                    $lastNo = (int)$conn->errno;
+                    break;
+                }
                 $st->bind_param('sssdsssi', $ma, $ten, $mo_ta, $gia, $trang, $dia_diem, $thoi_gian_mt, $so_mac_dinh);
                 $okIns = $st->execute();
-                if (!$okIns && stripos($st->error . $conn->error, 'Unknown column') !== false) {
-                    $st2 = $conn->prepare('INSERT INTO chudeworkshop (Ma_chu_de, Ten_chu_de, Mo_ta, Gia, Trang_thai) VALUES (?, ?, ?, ?, ?)');
-                    if ($st2) {
-                        $st2->bind_param(str_repeat('s', 3) . 'ds', $ma, $ten, $mo_ta, $gia, $trang);
-                        $okIns = $st2->execute();
-                    }
+                if ($okIns) {
+                    break;
                 }
+                $lastErr = $st->error ?: $conn->error;
+                $lastNo = (int)($st->errno ?: $conn->errno);
+
+                // Trùng khóa chính → thử sinh mã khác
+                if ($lastNo === 1062) {
+                    continue;
+                }
+
+                // Thiếu cột do schema cũ → fallback insert tối giản
+                if (stripos($lastErr, 'Unknown column') !== false) {
+                    $st2 = $conn->prepare('INSERT INTO chudeworkshop (Ma_chu_de, Ten_chu_de, Mo_ta, Gia, Trang_thai) VALUES (?, ?, ?, ?, ?)');
+                    if (!$st2) {
+                        $lastErr = $conn->error;
+                        $lastNo = (int)$conn->errno;
+                        break;
+                    }
+                    $st2->bind_param(str_repeat('s', 3) . 'ds', $ma, $ten, $mo_ta, $gia, $trang);
+                    $okIns = $st2->execute();
+                    if ($okIns) {
+                        break;
+                    }
+                    $lastErr = $st2->error ?: $conn->error;
+                    $lastNo = (int)($st2->errno ?: $conn->errno);
+                }
+
+                break;
             }
+
             if ($okIns) {
                 header('Location: workshop_topics.php?ok=1');
                 exit;
             }
-            $message = 'Lỗi lưu: ' . htmlspecialchars($conn->error ?: ($st->error ?? ''));
+            $detail = $lastErr !== '' ? (' (errno ' . (int)$lastNo . ') ' . $lastErr) : '';
+            $message = 'Lỗi lưu chủ đề' . ($ma !== '' ? (' [' . $ma . ']') : '') . ': ' . htmlspecialchars($detail !== '' ? $detail : 'Không rõ lỗi.');
         }
     }
 
@@ -87,7 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 header('Location: workshop_topics.php?ok=1');
                 exit;
             }
-            $message = 'Lỗi cập nhật: ' . htmlspecialchars($conn->error);
+            $stErr = $st ? ($st->error ?? '') : '';
+            $message = 'Lỗi cập nhật: ' . htmlspecialchars((string)($conn->error ?: $stErr));
         }
     }
 

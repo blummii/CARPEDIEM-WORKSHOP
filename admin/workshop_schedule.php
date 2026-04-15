@@ -95,7 +95,16 @@ $registrations = [];
 $lichDetail = null;
 
 if ($lichMa !== '') {
-    $st = $conn->prepare('SELECT l.*, c.Ten_chu_de, c.Gia FROM lichworkshop l JOIN chudeworkshop c ON l.Ma_chu_de = c.Ma_chu_de WHERE l.Ma_lich_workshop = ? LIMIT 1');
+    $st = $conn->prepare('
+      SELECT l.*, c.Ten_chu_de, c.Gia,
+             COALESCE(SUM(dk.So_nguoi_tham_gia), 0) AS So_luong_da_dang_ky_calc
+      FROM lichworkshop l
+      JOIN chudeworkshop c ON l.Ma_chu_de = c.Ma_chu_de
+      LEFT JOIN dangkyworkshop dk ON dk.Ma_lich_workshop = l.Ma_lich_workshop
+      WHERE l.Ma_lich_workshop = ?
+      GROUP BY l.Ma_lich_workshop
+      LIMIT 1
+    ');
     $st->bind_param('s', $lichMa);
     $st->execute();
     $lichDetail = $st->get_result()->fetch_assoc();
@@ -105,7 +114,6 @@ if ($lichMa !== '') {
         if ($tchk && $tchk->num_rows > 0) {
             $khTable = 'KhachHang';
         }
-        $ngayBuoi = workshop_date_ymd($lichDetail['Ngay_to_chuc'] ?? null);
         $sqlReg = "SELECT dk.Ma_dang_ky, dk.So_nguoi_tham_gia, dk.Tong_tien, dk.Trang_thai_thanh_toan, dk.Thoi_gian_tao,
           lw.Ngay_to_chuc AS Ngay_buoi_hoc,
           kh.Ten_khach_hang, kh.Email, kh.So_dien_thoai, kh.Ma_khach_hang
@@ -113,17 +121,10 @@ if ($lichMa !== '') {
           INNER JOIN lichworkshop lw ON dk.Ma_lich_workshop = lw.Ma_lich_workshop
           LEFT JOIN `{$khTable}` kh ON dk.Ma_khach_hang = kh.Ma_khach_hang
           WHERE dk.Ma_lich_workshop = ?";
-        if ($ngayBuoi !== null) {
-            $sqlReg .= ' AND DATE(lw.Ngay_to_chuc) = ?';
-        }
         $sqlReg .= ' ORDER BY dk.Thoi_gian_tao ASC, dk.Ma_dang_ky ASC';
         $st2 = $conn->prepare($sqlReg);
         if ($st2) {
-            if ($ngayBuoi !== null) {
-                $st2->bind_param('ss', $lichMa, $ngayBuoi);
-            } else {
-                $st2->bind_param('s', $lichMa);
-            }
+            $st2->bind_param('s', $lichMa);
             $st2->execute();
             $r2 = $st2->get_result();
             while ($row = $r2->fetch_assoc()) {
@@ -141,10 +142,14 @@ if ($m === 12) {
 }
 
 $rows = [];
-$sql = "SELECT l.Ma_lich_workshop, l.Ngay_to_chuc, l.So_luong_toi_da, l.So_luong_da_dang_ky, c.Ten_chu_de, c.Ma_chu_de
+$sql = "SELECT l.Ma_lich_workshop, l.Ngay_to_chuc, l.So_luong_toi_da,
+          COALESCE(SUM(dk.So_nguoi_tham_gia), 0) AS So_luong_da_dang_ky_calc,
+          c.Ten_chu_de, c.Ma_chu_de
         FROM lichworkshop l
         JOIN chudeworkshop c ON l.Ma_chu_de = c.Ma_chu_de
+        LEFT JOIN dangkyworkshop dk ON dk.Ma_lich_workshop = l.Ma_lich_workshop
         WHERE l.Ngay_to_chuc >= ? AND l.Ngay_to_chuc < ?
+        GROUP BY l.Ma_lich_workshop
         ORDER BY l.Ngay_to_chuc ASC, l.Ma_lich_workshop ASC";
 $st = $conn->prepare($sql);
 $st->bind_param('ss', $start, $startNextMonth);
@@ -211,7 +216,7 @@ if ($nextM > 12) {
       <tbody>
         <?php foreach ($rows as $row):
             $max = (int)($row['So_luong_toi_da'] ?? 0);
-            $used = (int)($row['So_luong_da_dang_ky'] ?? 0);
+            $used = (int)($row['So_luong_da_dang_ky_calc'] ?? 0);
             $con = $max - $used;
             ?>
           <tr>
@@ -241,6 +246,10 @@ if ($nextM > 12) {
 <?php if ($lichDetail): ?>
 <div class="panel" style="margin-top:20px;">
   <h3 style="margin-top:0;">Đăng ký — <?php echo htmlspecialchars($lichDetail['Ten_chu_de'] ?? ''); ?> · ngày <?php echo htmlspecialchars(workshop_fmt_ngay_vn($lichDetail['Ngay_to_chuc'] ?? null)); ?></h3>
+  <p style="margin:6px 0 12px;color:#a88;">
+    Đã đăng ký: <strong><?php echo (int)($lichDetail['So_luong_da_dang_ky_calc'] ?? 0); ?></strong>
+    / <?php echo (int)($lichDetail['So_luong_toi_da'] ?? 0); ?> chỗ
+  </p>
   <div class="table-responsive">
     <table class="data-table">
       <thead>

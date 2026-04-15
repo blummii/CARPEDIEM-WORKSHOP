@@ -86,7 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
       $needItems = [];
       $st2 = $conn->prepare('
-        SELECT cdh.Ma_san_pham, cdh.So_luong, COALESCE(tk.So_luong, 0) AS So_luong_ton
+        SELECT cdh.Ma_san_pham, cdh.So_luong,
+               COALESCE(tk.So_luong, 0) AS So_luong_ton,
+               COALESCE(tk.Muc_ton_toi_thieu, 0) AS Muc_ton_toi_thieu
         FROM ChiTietDonHang cdh
         LEFT JOIN TonKho tk ON tk.Ma_san_pham = cdh.Ma_san_pham
         WHERE cdh.Ma_don_hang = ?
@@ -98,16 +100,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $needItems[] = $r;
       }
 
-      $shouldDeduct = in_array($status, ['confirmed', 'shipped'], true) && $currentStatus === 'pending';
-      $shouldRestock = $status === 'cancelled' && in_array($currentStatus, ['confirmed', 'shipped', 'completed'], true);
+      $deductedStatuses = ['confirmed', 'shipped', 'completed'];
+      $isCurrentDeducted = in_array((string)$currentStatus, $deductedStatuses, true);
+      $isNewDeducted = in_array((string)$status, $deductedStatuses, true);
+      $shouldDeduct = !$isCurrentDeducted && $isNewDeducted;
+      $shouldRestock = $isCurrentDeducted && !$isNewDeducted;
 
       if ($shouldDeduct) {
         $lack = [];
         foreach ($needItems as $it) {
           $soLuongCan = (int)($it['So_luong'] ?? 0);
           $soLuongTon = (int)($it['So_luong_ton'] ?? 0);
-          if ($soLuongTon < $soLuongCan) {
-            $lack[] = $it['Ma_san_pham'] . ' (cần ' . $soLuongCan . ', còn ' . $soLuongTon . ')';
+          $tonToiThieu = (int)($it['Muc_ton_toi_thieu'] ?? 0);
+          $coTheBan = max(0, $soLuongTon - $tonToiThieu);
+          if ($coTheBan < $soLuongCan) {
+            $lack[] = $it['Ma_san_pham'] . ' (cần ' . $soLuongCan . ', tối đa bán ' . $coTheBan . ', tồn ' . $soLuongTon . ', tối thiểu ' . $tonToiThieu . ')';
           }
         }
 
@@ -122,12 +129,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $u->execute();
 
             // Deduct stock
-            $upd = $conn->prepare('UPDATE TonKho SET So_luong = So_luong - ? WHERE Ma_san_pham = ?');
+            $upd = $conn->prepare('UPDATE TonKho
+              SET So_luong = So_luong - ?
+              WHERE Ma_san_pham = ?
+                AND (So_luong - ?) >= COALESCE(Muc_ton_toi_thieu, 0)');
             foreach ($needItems as $it) {
               $qty = (int)($it['So_luong'] ?? 0);
               $ma_sp = $it['Ma_san_pham'];
-              $upd->bind_param('is', $qty, $ma_sp);
+              $upd->bind_param('isi', $qty, $ma_sp, $qty);
               $upd->execute();
+              if ($upd->affected_rows < 1) {
+                throw new Exception('Không đủ tồn kho để cập nhật sản phẩm: ' . $ma_sp);
+              }
             }
 
             $conn->commit();
@@ -195,33 +208,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       if (!$pairs) {
         $message = 'Đơn hàng phải có ít nhất 1 sản phẩm (số lượng > 0).';
       } else {
+        // Gộp các dòng trùng sản phẩm để kiểm tra tồn kho chính xác.
+        $qtyByProduct = [];
+        foreach ($pairs as $p) {
+          [$sp, $qty] = $p;
+          $qtyByProduct[$sp] = ($qtyByProduct[$sp] ?? 0) + (int)$qty;
+        }
+        $pairs = [];
+        foreach ($qtyByProduct as $sp => $qty) {
+          $pairs[] = [(string)$sp, (int)$qty];
+        }
+
         $conn->begin_transaction();
         try {
           $ma_don_hang = genCode($conn, 'DH', 'DonHang', 'Ma_don_hang');
 
-          // Fetch product prices in bulk
+          // Fetch product prices + stock in bulk
           $in = implode(',', array_fill(0, count($pairs), '?'));
           $params = [];
           foreach ($pairs as $p) $params[] = $p[0];
           $types = str_repeat('s', count($params));
 
-          $stPrices = $conn->prepare("SELECT Ma_san_pham, Gia FROM SanPham WHERE Ma_san_pham IN ($in)");
+          $stPrices = $conn->prepare("
+            SELECT sp.Ma_san_pham, sp.Gia,
+                   COALESCE(tk.So_luong, 0) AS So_luong_ton,
+                   COALESCE(tk.Muc_ton_toi_thieu, 0) AS Muc_ton_toi_thieu
+            FROM SanPham sp
+            LEFT JOIN TonKho tk ON tk.Ma_san_pham = sp.Ma_san_pham
+            WHERE sp.Ma_san_pham IN ($in)
+          ");
           $stPrices->bind_param($types, ...$params);
           $stPrices->execute();
           $resPrices = $stPrices->get_result();
           $priceMap = [];
+          $stockMap = [];
+          $minMap = [];
           while ($r = $resPrices->fetch_assoc()) {
             $priceMap[(string)$r['Ma_san_pham']] = (float)$r['Gia'];
+            $stockMap[(string)$r['Ma_san_pham']] = (int)($r['So_luong_ton'] ?? 0);
+            $minMap[(string)$r['Ma_san_pham']] = (int)($r['Muc_ton_toi_thieu'] ?? 0);
           }
 
           $tong_tien = 0;
+          $lack = [];
           foreach ($pairs as $p) {
             [$sp, $qty] = $p;
             $gia = $priceMap[$sp] ?? null;
             if ($gia === null) {
               throw new Exception('Không tìm thấy giá sản phẩm: ' . $sp);
             }
+            $soLuongTon = (int)($stockMap[$sp] ?? 0);
+            $tonToiThieu = (int)($minMap[$sp] ?? 0);
+            $coTheBan = max(0, $soLuongTon - $tonToiThieu);
+            if ((int)$qty > $coTheBan) {
+              $lack[] = $sp . ' (yêu cầu ' . (int)$qty . ', tối đa bán ' . $coTheBan . ', tồn ' . $soLuongTon . ', tối thiểu ' . $tonToiThieu . ')';
+            }
             $tong_tien += $gia * $qty;
+          }
+          if ($lack) {
+            throw new Exception('Số lượng vượt tồn kho: ' . implode('; ', $lack));
           }
 
           $trang_thai = 'pending';
@@ -367,7 +412,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
           if (in_array($currentStatus, ['confirmed', 'shipped', 'completed'], true)) {
             foreach ($pairs as $p) {
               [$sp, $qty] = $p;
-              $upd = $conn->prepare('UPDATE TonKho SET So_luong = So_luong - ? WHERE Ma_san_pham = ? AND So_luong >= ?');
+              $upd = $conn->prepare('UPDATE TonKho
+                SET So_luong = So_luong - ?
+                WHERE Ma_san_pham = ?
+                  AND (So_luong - ?) >= COALESCE(Muc_ton_toi_thieu, 0)');
               $upd->bind_param('isi', $qty, $sp, $qty);
               $upd->execute();
               if ($upd->affected_rows < 1) {
@@ -621,7 +669,14 @@ if (!$view && !$edit) {
     while ($r = $catst->fetch_assoc()) $categories[] = $r;
 
     $products = [];
-    $ps = $conn->query('SELECT Ma_san_pham, Ten_san_pham, Gia, Ma_danh_muc FROM SanPham ORDER BY Ten_san_pham');
+    $ps = $conn->query('
+      SELECT s.Ma_san_pham, s.Ten_san_pham, s.Gia, s.Ma_danh_muc,
+             COALESCE(t.So_luong, 0) AS So_luong_ton,
+             COALESCE(t.Muc_ton_toi_thieu, 0) AS Muc_ton_toi_thieu
+      FROM SanPham s
+      LEFT JOIN TonKho t ON t.Ma_san_pham = s.Ma_san_pham
+      ORDER BY s.Ten_san_pham
+    ');
     while ($r = $ps->fetch_assoc()) $products[] = $r;
   ?>
 
@@ -670,8 +725,13 @@ if (!$view && !$edit) {
               <select id="edit_sp" style="width:100%; padding:10px; border-radius:8px; border:1px solid #f1dede">
                 <option value="">-- Chọn --</option>
                 <?php foreach ($products as $p): ?>
-                  <option value="<?php echo htmlspecialchars($p['Ma_san_pham']); ?>" data-cat="<?php echo htmlspecialchars($p['Ma_danh_muc']); ?>">
-                    <?php echo htmlspecialchars($p['Ten_san_pham']); ?>
+                  <?php $coTheBanEdit = max(0, (int)($p['So_luong_ton'] ?? 0) - (int)($p['Muc_ton_toi_thieu'] ?? 0)); ?>
+                  <option value="<?php echo htmlspecialchars($p['Ma_san_pham']); ?>"
+                          data-cat="<?php echo htmlspecialchars($p['Ma_danh_muc']); ?>"
+                          data-stock="<?php echo (int)($p['So_luong_ton'] ?? 0); ?>"
+                          data-min-stock="<?php echo (int)($p['Muc_ton_toi_thieu'] ?? 0); ?>"
+                          data-available="<?php echo (int)$coTheBanEdit; ?>">
+                    <?php echo htmlspecialchars($p['Ten_san_pham']); ?> (bán tối đa: <?php echo (int)$coTheBanEdit; ?>)
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -749,7 +809,19 @@ if (!$view && !$edit) {
           var opt = spSel.options[spSel.selectedIndex];
           var ten = (opt && opt.textContent) ? opt.textContent : spId;
           var qty = parseInt(qtyInp.value || '1', 10);
+          var stock = parseInt((opt && opt.getAttribute('data-stock')) || '0', 10);
+          var minStock = parseInt((opt && opt.getAttribute('data-min-stock')) || '0', 10);
+          var available = parseInt((opt && opt.getAttribute('data-available')) || '0', 10);
           if (isNaN(qty) || qty < 0) qty = 0;
+          if (isNaN(stock) || stock < 0) stock = 0;
+          if (isNaN(minStock) || minStock < 0) minStock = 0;
+          if (isNaN(available) || available < 0) available = 0;
+          if (available <= 0) return alert('Sản phẩm này không thể bán thêm (phải giữ mức tồn tối thiểu: ' + minStock + ').');
+          if (qty > available) {
+            alert('Số lượng vượt mức cho phép. Tối đa có thể bán: ' + available + ' (tồn: ' + stock + ', tối thiểu: ' + minStock + ').');
+            qty = available;
+            qtyInp.value = String(available);
+          }
 
           var body = document.getElementById('edit_items_body');
           var tr = document.createElement('tr');
@@ -758,7 +830,7 @@ if (!$view && !$edit) {
             <td>${ten.replace(/</g,'&lt;')}</td>
             <td>
               <input type="hidden" name="items_ma_sp[]" value="${spId}">
-              <input name="items_so_luong[]" type="number" min="0" value="${qty}" style="width:120px; padding:8px; border-radius:8px; border:1px solid #f1dede">
+              <input name="items_so_luong[]" type="number" min="0" max="${available}" value="${qty}" data-max-stock="${available}" style="width:120px; padding:8px; border-radius:8px; border:1px solid #f1dede">
             </td>
             <td><button type="button" class="icon-btn" onclick="removeRow(this)">🗑️</button></td>
           `;
@@ -769,6 +841,19 @@ if (!$view && !$edit) {
           var tr = btn.closest('tr');
           if (tr) tr.parentNode.removeChild(tr);
         }
+
+        document.addEventListener('input', function (e) {
+          var el = e.target;
+          if (!el || el.name !== 'items_so_luong[]') return;
+          var maxStock = parseInt(el.getAttribute('data-max-stock') || '', 10);
+          if (isNaN(maxStock)) return;
+          var val = parseInt(el.value || '0', 10);
+          if (isNaN(val)) return;
+          if (val > maxStock) {
+            alert('Số lượng vượt mức cho phép. Tối đa có thể bán: ' + maxStock);
+            el.value = String(maxStock);
+          }
+        });
       </script>
     <?php else: ?>
       <div>Không tìm thấy đơn hàng.</div>
@@ -824,7 +909,14 @@ if (!$view && !$edit) {
       while ($r = $catst->fetch_assoc()) $categories[] = $r;
 
       $products = [];
-      $ps = $conn->query('SELECT Ma_san_pham, Ten_san_pham, Gia, Ma_danh_muc FROM SanPham ORDER BY Ten_san_pham');
+      $ps = $conn->query('
+        SELECT s.Ma_san_pham, s.Ten_san_pham, s.Gia, s.Ma_danh_muc,
+               COALESCE(t.So_luong, 0) AS So_luong_ton,
+               COALESCE(t.Muc_ton_toi_thieu, 0) AS Muc_ton_toi_thieu
+        FROM SanPham s
+        LEFT JOIN TonKho t ON t.Ma_san_pham = s.Ma_san_pham
+        ORDER BY s.Ten_san_pham
+      ');
       while ($r = $ps->fetch_assoc()) $products[] = $r;
     ?>
 
@@ -865,8 +957,13 @@ if (!$view && !$edit) {
               <select id="add_sp" style="width:100%; padding:10px; border-radius:8px; border:1px solid #f1dede">
                 <option value="">-- Chọn --</option>
                 <?php foreach ($products as $p): ?>
-                  <option value="<?php echo htmlspecialchars($p['Ma_san_pham']); ?>" data-cat="<?php echo htmlspecialchars($p['Ma_danh_muc']); ?>">
-                    <?php echo htmlspecialchars($p['Ten_san_pham']); ?>
+                  <?php $coTheBan = max(0, (int)($p['So_luong_ton'] ?? 0) - (int)($p['Muc_ton_toi_thieu'] ?? 0)); ?>
+                  <option value="<?php echo htmlspecialchars($p['Ma_san_pham']); ?>"
+                          data-cat="<?php echo htmlspecialchars($p['Ma_danh_muc']); ?>"
+                          data-stock="<?php echo (int)($p['So_luong_ton'] ?? 0); ?>"
+                          data-min-stock="<?php echo (int)($p['Muc_ton_toi_thieu'] ?? 0); ?>"
+                          data-available="<?php echo (int)$coTheBan; ?>">
+                    <?php echo htmlspecialchars($p['Ten_san_pham']); ?> (bán tối đa: <?php echo (int)$coTheBan; ?>)
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -931,7 +1028,19 @@ if (!$view && !$edit) {
         var opt = spSel.options[spSel.selectedIndex];
         var ten = (opt && opt.textContent) ? opt.textContent : spId;
         var qty = parseInt(qtyInp.value || '1', 10);
+        var stock = parseInt((opt && opt.getAttribute('data-stock')) || '0', 10);
+        var minStock = parseInt((opt && opt.getAttribute('data-min-stock')) || '0', 10);
+        var available = parseInt((opt && opt.getAttribute('data-available')) || '0', 10);
         if (isNaN(qty) || qty < 0) qty = 0;
+        if (isNaN(stock) || stock < 0) stock = 0;
+        if (isNaN(minStock) || minStock < 0) minStock = 0;
+        if (isNaN(available) || available < 0) available = 0;
+        if (available <= 0) return alert('Sản phẩm này không thể bán thêm (phải giữ mức tồn tối thiểu: ' + minStock + ').');
+        if (qty > available) {
+          alert('Số lượng vượt mức cho phép. Tối đa có thể bán: ' + available + ' (tồn: ' + stock + ', tối thiểu: ' + minStock + ').');
+          qty = available;
+          qtyInp.value = String(available);
+        }
 
         var tr = document.createElement('tr');
         tr.innerHTML = `
@@ -939,7 +1048,7 @@ if (!$view && !$edit) {
           <td>${ten.replace(/</g,'&lt;')}</td>
           <td>
             <input type="hidden" name="items_ma_sp[]" value="${spId}">
-            <input name="items_so_luong[]" type="number" min="0" value="${qty}" style="width:120px; padding:8px; border-radius:8px; border:1px solid #f1dede">
+            <input name="items_so_luong[]" type="number" min="0" max="${available}" value="${qty}" data-max-stock="${available}" style="width:120px; padding:8px; border-radius:8px; border:1px solid #f1dede">
           </td>
           <td><button type="button" class="icon-btn" onclick="removeRow(this)">🗑️</button></td>
         `;
@@ -950,6 +1059,19 @@ if (!$view && !$edit) {
         var tr = btn.closest('tr');
         if (tr) tr.parentNode.removeChild(tr);
       }
+
+      document.addEventListener('input', function (e) {
+        var el = e.target;
+        if (!el || el.name !== 'items_so_luong[]') return;
+        var maxStock = parseInt(el.getAttribute('data-max-stock') || '', 10);
+        if (isNaN(maxStock)) return;
+        var val = parseInt(el.value || '0', 10);
+        if (isNaN(val)) return;
+        if (val > maxStock) {
+          alert('Số lượng vượt mức cho phép. Tối đa có thể bán: ' + maxStock);
+          el.value = String(maxStock);
+        }
+      });
     </script>
 
   </section>

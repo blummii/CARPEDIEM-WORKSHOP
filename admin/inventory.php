@@ -38,22 +38,6 @@ function genCode($db, $prefix, $table, $col) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!check_csrf($_POST['_csrf'] ?? '')) die('CSRF token không hợp lệ');
     $act = $_POST['action'];
-    if ($act === 'add') {
-        $ma_sp = $_POST['ma_san_pham'] ?? '';
-        $so_luong = (int)($_POST['so_luong'] ?? 0);
-        $muc_toi_thieu = (int)($_POST['muc_toi_thieu'] ?? 0);
-        if (isset($pdo)) {
-            $ma_tk = genCode($pdo, 'TK', 'TonKho', 'Ma_ton_kho');
-            $ins = $pdo->prepare('INSERT INTO TonKho (Ma_ton_kho, Ma_san_pham, So_luong, Muc_ton_toi_thieu) VALUES (?, ?, ?, ?)');
-            $ins->execute([$ma_tk, $ma_sp, $so_luong, $muc_toi_thieu]);
-        } else {
-            $ma_tk = genCode($conn, 'TK', 'TonKho', 'Ma_ton_kho');
-            $ins = $conn->prepare('INSERT INTO TonKho (Ma_ton_kho, Ma_san_pham, So_luong, Muc_ton_toi_thieu) VALUES (?, ?, ?, ?)');
-            $ins->bind_param('ssii', $ma_tk, $ma_sp, $so_luong, $muc_toi_thieu);
-            $ins->execute();
-        }
-        header('Location: inventory.php'); exit;
-    }
     if ($act === 'edit') {
         $ma_tk = $_POST['ma_tk'] ?? '';
         $so_luong = (int)($_POST['so_luong'] ?? 0);
@@ -104,16 +88,13 @@ if ($q !== '') {
     <div class="title">QUẢN LÝ TỒN KHO</div>
     <div class="subtitle">Theo dõi số lượng và cảnh báo tồn kho</div>
   </div>
-  <div class="header-actions">
-    <a href="#add" class="add-btn" onclick="document.getElementById('addModal').style.display='block';return false;">+ THÊM HÀNG HÓA MỚI</a>
-  </div>
 </div>
 
 <section>
   <div class="table-responsive">
     <table class="data-table">
       <thead>
-        <tr><th>Hình ảnh</th><th>Mã Sản Phẩm (SKU)</th><th>Tên Sản Phẩm</th><th>Danh Mục</th><th>Số Lượng Tồn Kho</th><th>Giá Bán</th><th>Giá Vốn</th><th>Trạng Thái</th><th>Hành Động</th></tr>
+        <tr><th>Hình ảnh</th><th>Mã Sản Phẩm (SKU)</th><th>Tên Sản Phẩm</th><th>Danh Mục</th><th>Số Lượng Tồn Kho</th><th>Giá Bán</th><th>Trạng Thái</th><th>Hành Động</th></tr>
       </thead>
       <tbody>
         <?php foreach ($items as $it): ?>
@@ -125,7 +106,6 @@ if ($q !== '') {
             <td><?php echo htmlspecialchars($it['Ten_danh_muc']);?></td>
             <td><?php echo (int)$it['So_luong'];?></td>
             <td><?php echo number_format($it['Gia'] ?? 0,0,',','.');?></td>
-            <td>--</td>
             <td><span class="badge"><?php echo $status;?></span></td>
             <td>
               <div class="action-icons">
@@ -144,50 +124,6 @@ if ($q !== '') {
     </table>
   </div>
 </section>
-
-<!-- Add modal -->
-<div id="addModal" style="display:none">
-  <div class="modal-overlay" role="presentation" onclick="if(event.target===this) document.getElementById('addModal').style.display='none'">
-    <div class="modal-panel panel" style="max-width:420px" onclick="event.stopPropagation()">
-      <h3>Thêm tồn kho</h3>
-      <form method="post">
-        <?php echo csrf_input(); ?>
-        <input type="hidden" name="action" value="add">
-        <div class="form-row column">
-          <label>Chọn sản phẩm<br>
-            <select class="form-select" name="ma_san_pham" required>
-              <option value="">-- Chọn sản phẩm --</option>
-              <?php
-              if (isset($pdo)) {
-                $ps = $pdo->query('SELECT Ma_san_pham, Ten_san_pham FROM SanPham ORDER BY Ten_san_pham')->fetchAll(PDO::FETCH_ASSOC);
-              } else {
-                $ps = [];
-                $r = $conn->query('SELECT Ma_san_pham, Ten_san_pham FROM SanPham ORDER BY Ten_san_pham');
-                while ($rr = $r->fetch_assoc()) {
-                  $ps[] = $rr;
-                }
-              }
-              foreach ($ps as $p) {
-                echo '<option value="' . htmlspecialchars($p['Ma_san_pham']) . '">' . htmlspecialchars($p['Ten_san_pham']) . '</option>';
-              }
-              ?>
-            </select>
-          </label>
-        </div>
-        <div class="form-row column">
-          <label>Số lượng<br><input class="form-input" name="so_luong" type="number" min="0" value="0" required></label>
-        </div>
-        <div class="form-row column">
-          <label>Mức tồn tối thiểu<br><input class="form-input" name="muc_toi_thieu" type="number" min="0" value="0" required></label>
-        </div>
-        <div class="modal-actions">
-          <button class="add-btn" type="submit">Lưu</button>
-          <button class="icon-btn" type="button" onclick="document.getElementById('addModal').style.display='none'">Hủy</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
 
 <!-- Edit modal -->
 <div id="editModal" style="display:none">

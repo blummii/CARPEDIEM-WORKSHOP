@@ -121,7 +121,10 @@ $user = $isLoggedIn ? $_SESSION['user'] : null;
                             <div style="padding: 10px; border: 1px solid #f8d7da; border-radius: 10px; margin-bottom: 10px;">
                                 <small>📅 Ngày: <?php echo htmlspecialchars(workshop_fmt_ngay_vn($l['Ngay_to_chuc'] ?? null)); ?></small><br>
                                 <?php if($conlai > 0): ?>
-                                    <button class="btn" onclick="openPopup('<?php echo $l['Ma_lich_workshop']; ?>', <?php echo $l['So_luong_toi_da']; ?>, <?php echo $l['So_luong_da_dang_ky']; ?>)">
+                                    <button class="btn"
+                                        data-lich="<?php echo htmlspecialchars($l['Ma_lich_workshop'], ENT_QUOTES); ?>"
+                                        data-gia="<?php echo htmlspecialchars((string)($cd['Gia'] ?? 0), ENT_QUOTES); ?>"
+                                        onclick="openPopup('<?php echo $l['Ma_lich_workshop']; ?>', <?php echo (int)$l['So_luong_toi_da']; ?>, <?php echo (int)$l['So_luong_da_dang_ky']; ?>, <?php echo (float)($cd['Gia'] ?? 0); ?>)">
                                         Chọn ghế (Còn <?php echo $conlai; ?> chỗ)
                                     </button>
                                 <?php else: ?>
@@ -171,7 +174,7 @@ $user = $isLoggedIn ? $_SESSION['user'] : null;
     </div>
 </div>
 
-<script src="assets/script.js"></script>
+<script src="assets/script.js?v=<?php echo urlencode((string)@filemtime(__DIR__ . '/assets/script.js')); ?>"></script>
 <script>
     function closePopup() {
         document.getElementById("popup").style.display = "none";

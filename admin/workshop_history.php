@@ -12,11 +12,15 @@ workshop_ensure_schema($conn);
 
 $today = date('Y-m-d');
 $rows = [];
-$sql = "SELECT l.Ma_lich_workshop, l.Ngay_to_chuc, l.So_luong_toi_da, l.So_luong_da_dang_ky,
-        c.Ten_chu_de, c.Ma_chu_de
+$sql = "SELECT l.Ma_lich_workshop, l.Ngay_to_chuc, l.So_luong_toi_da,
+          COALESCE(SUM(dk.So_nguoi_tham_gia), 0) AS So_luong_da_dang_ky_calc,
+          c.Ten_chu_de, c.Ma_chu_de, c.Trang_thai
         FROM lichworkshop l
         JOIN chudeworkshop c ON l.Ma_chu_de = c.Ma_chu_de
+        LEFT JOIN dangkyworkshop dk ON dk.Ma_lich_workshop = l.Ma_lich_workshop
         WHERE l.Ngay_to_chuc < ?
+          OR c.Trang_thai IN ('Ngừng tổ chức', 'Ngung to chuc')
+        GROUP BY l.Ma_lich_workshop
         ORDER BY l.Ngay_to_chuc DESC, l.Ma_lich_workshop DESC
         LIMIT 200";
 $st = $conn->prepare($sql);
@@ -52,7 +56,7 @@ while ($row = $rs->fetch_assoc()) {
           <tr>
             <td><?php echo htmlspecialchars(workshop_fmt_ngay_vn($row['Ngay_to_chuc'] ?? null)); ?></td>
             <td><?php echo htmlspecialchars($row['Ten_chu_de'] ?? ''); ?></td>
-            <td><?php echo (int)($row['So_luong_da_dang_ky'] ?? 0); ?> / <?php echo (int)($row['So_luong_toi_da'] ?? 0); ?></td>
+            <td><?php echo (int)($row['So_luong_da_dang_ky_calc'] ?? 0); ?> / <?php echo (int)($row['So_luong_toi_da'] ?? 0); ?></td>
             <td><?php
                 $ym = workshop_ym_from_mysql_date($row['Ngay_to_chuc'] ?? null);
                 $href = 'workshop_schedule.php?lich=' . urlencode($row['Ma_lich_workshop'] ?? '');
@@ -63,7 +67,7 @@ while ($row = $rs->fetch_assoc()) {
           </tr>
         <?php endforeach; ?>
         <?php if ($rows === []): ?>
-          <tr><td colspan="4" style="color:#a88;">Chưa có buổi nào trong quá khứ.</td></tr>
+          <tr><td colspan="4" style="color:#a88;">Chưa có buổi nào trong quá khứ hoặc ngừng tổ chức.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>
