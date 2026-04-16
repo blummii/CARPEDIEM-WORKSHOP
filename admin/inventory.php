@@ -52,33 +52,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         header('Location: inventory.php'); exit;
     }
-    if ($act === 'delete') {
-        $ma_tk = $_POST['ma_tk'] ?? '';
-        if (isset($pdo)) {
-            $d = $pdo->prepare('DELETE FROM TonKho WHERE Ma_ton_kho = ?'); $d->execute([$ma_tk]);
-        } else {
-            $d = $conn->prepare('DELETE FROM TonKho WHERE Ma_ton_kho = ?'); $d->bind_param('s', $ma_tk); $d->execute();
-        }
-        header('Location: inventory.php'); exit;
-    }
 }
 
 // Search / list
 $q = trim($_GET['q'] ?? '');
+$perPage = 10;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$offset = ($page - 1) * $perPage;
+$totalRows = 0;
+$totalPages = 1;
 $items = [];
 $sqlBase = 'SELECT t.Ma_ton_kho, t.Ma_san_pham, t.So_luong, t.Muc_ton_toi_thieu, s.Ten_san_pham, s.Gia, s.Hinh_anh, c.Ten_danh_muc FROM TonKho t LEFT JOIN SanPham s ON t.Ma_san_pham=s.Ma_san_pham LEFT JOIN DanhMucSanPham c ON s.Ma_danh_muc=c.Ma_danh_muc';
 if ($q !== '') {
     $like = "%$q%";
     if (isset($pdo)) {
-        $st = $pdo->prepare($sqlBase . ' WHERE s.Ten_san_pham LIKE ? OR s.Ma_san_pham LIKE ? ORDER BY t.Ma_ton_kho DESC');
+        $cnt = $pdo->prepare('SELECT COUNT(*) FROM TonKho t LEFT JOIN SanPham s ON t.Ma_san_pham=s.Ma_san_pham WHERE s.Ten_san_pham LIKE ? OR s.Ma_san_pham LIKE ?');
+        $cnt->execute([$like, $like]);
+        $totalRows = (int)$cnt->fetchColumn();
+        $totalPages = max(1, (int)ceil($totalRows / $perPage));
+        if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+        $st = $pdo->prepare($sqlBase . ' WHERE s.Ten_san_pham LIKE ? OR s.Ma_san_pham LIKE ? ORDER BY t.Ma_ton_kho DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset);
         $st->execute([$like, $like]); $items = $st->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        $st = $conn->prepare($sqlBase . ' WHERE s.Ten_san_pham LIKE ? OR s.Ma_san_pham LIKE ? ORDER BY t.Ma_ton_kho DESC');
-        $st->bind_param('ss', $like, $like); $st->execute(); $res = $st->get_result(); while ($r=$res->fetch_assoc()) $items[]=$r;
+        $cnt = $conn->prepare('SELECT COUNT(*) AS c FROM TonKho t LEFT JOIN SanPham s ON t.Ma_san_pham=s.Ma_san_pham WHERE s.Ten_san_pham LIKE ? OR s.Ma_san_pham LIKE ?');
+        $cnt->bind_param('ss', $like, $like); $cnt->execute();
+        $totalRows = (int)(($cnt->get_result()->fetch_assoc()['c'] ?? 0));
+        $totalPages = max(1, (int)ceil($totalRows / $perPage));
+        if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+        $st = $conn->prepare($sqlBase . ' WHERE s.Ten_san_pham LIKE ? OR s.Ma_san_pham LIKE ? ORDER BY t.Ma_ton_kho DESC LIMIT ? OFFSET ?');
+        $st->bind_param('ssii', $like, $like, $perPage, $offset); $st->execute(); $res = $st->get_result(); while ($r=$res->fetch_assoc()) $items[]=$r;
     }
 } else {
-    if (isset($pdo)) { $st = $pdo->query($sqlBase . ' ORDER BY t.Ma_ton_kho DESC'); $items = $st->fetchAll(PDO::FETCH_ASSOC); }
-    else { $res = $conn->query($sqlBase . ' ORDER BY t.Ma_ton_kho DESC'); while ($r=$res->fetch_assoc()) $items[]=$r; }
+    if (isset($pdo)) {
+      $cnt = $pdo->query('SELECT COUNT(*) FROM TonKho');
+      $totalRows = (int)$cnt->fetchColumn();
+      $totalPages = max(1, (int)ceil($totalRows / $perPage));
+      if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+      $st = $pdo->query($sqlBase . ' ORDER BY t.Ma_ton_kho DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset); $items = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+    else {
+      $cnt = $conn->query('SELECT COUNT(*) AS c FROM TonKho');
+      $totalRows = (int)(($cnt ? $cnt->fetch_assoc()['c'] : 0));
+      $totalPages = max(1, (int)ceil($totalRows / $perPage));
+      if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+      $res = $conn->query($sqlBase . ' ORDER BY t.Ma_ton_kho DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset); while ($r=$res->fetch_assoc()) $items[]=$r;
+    }
 }
 
 ?>
@@ -110,12 +128,6 @@ if ($q !== '') {
             <td>
               <div class="action-icons">
                 <button class="icon-btn" onclick="openEdit('<?php echo htmlspecialchars($it['Ma_ton_kho'] ?? ''); ?>', '<?php echo htmlspecialchars($it['So_luong']);?>', '<?php echo htmlspecialchars($it['Muc_ton_toi_thieu']);?>')">✏️</button>
-                <form method="post" style="display:inline" onsubmit="return confirm('Xác nhận xóa?')">
-                  <?php echo csrf_input(); ?>
-                  <input type="hidden" name="action" value="delete">
-                  <input type="hidden" name="ma_tk" value="<?php echo htmlspecialchars($it['Ma_ton_kho'] ?? ''); ?>">
-                  <button class="icon-btn" type="submit">🗑️</button>
-                </form>
               </div>
             </td>
           </tr>
@@ -124,6 +136,17 @@ if ($q !== '') {
     </table>
   </div>
 </section>
+<?php if ($totalPages > 1): ?>
+  <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <?php if ($page > 1): ?>
+      <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="inventory.php?<?php echo htmlspecialchars(http_build_query(['q'=>$q,'page'=>$page-1])); ?>">← Trước</a>
+    <?php endif; ?>
+    <span style="color:#a88;">Trang <?php echo (int)$page; ?> / <?php echo (int)$totalPages; ?></span>
+    <?php if ($page < $totalPages): ?>
+      <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="inventory.php?<?php echo htmlspecialchars(http_build_query(['q'=>$q,'page'=>$page+1])); ?>">Sau →</a>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <!-- Edit modal -->
 <div id="editModal" style="display:none">

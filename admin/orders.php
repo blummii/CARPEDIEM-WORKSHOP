@@ -51,15 +51,24 @@ function resolveEmployeeId(mysqli $db, $adminSessionId): ?string {
   return (string)$val;
 }
 
+function order_customer_table_name(mysqli $conn): string {
+  foreach (['KhachHang', 'khachhang'] as $tb) {
+    $chk = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($tb) . "'");
+    if ($chk && $chk->num_rows > 0) return $tb;
+  }
+  return 'KhachHang';
+}
+
 // list orders
 
 
 // view details or update status
-$edit = $_GET['edit'] ?? null;
+$edit = null; // Đã tắt chức năng sửa đơn hàng
 $view = $_GET['view'] ?? ($_POST['ma_don'] ?? null);
 $message = '';
 
 $allowedStatuses = ['pending', 'confirmed', 'shipped', 'completed', 'cancelled'];
+$khTable = order_customer_table_name($conn);
 
 // Handle status update from detail view
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
@@ -305,134 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       }
     }
   } elseif ($act === 'edit_order') {
-    if (!check_csrf($_POST['_csrf'] ?? '')) die('CSRF token không hợp lệ');
-
-    $ma_don = $_POST['ma_don'] ?? '';
-    $ma_khach_hang = $_POST['ma_khach_hang'] ?? '';
-    $items_ma_sp = $_POST['items_ma_sp'] ?? [];
-    $items_so_luong = $_POST['items_so_luong'] ?? [];
-
-    if (!$ma_don) {
-      $message = 'Thiếu mã đơn.';
-    } elseif (!$ma_khach_hang) {
-      $message = 'Thiếu khách hàng.';
-    } else {
-      $pairs = [];
-      for ($i = 0; $i < count($items_ma_sp); $i++) {
-        $sp = (string)($items_ma_sp[$i] ?? '');
-        $qty = (int)($items_so_luong[$i] ?? 0);
-        // Cho phép qty = 0 để xóa dòng (sẽ bỏ qua khi insert)
-        if ($sp && $qty >= 0) {
-          $pairs[] = [$sp, $qty];
-        }
-      }
-      $pairs = array_values(array_filter($pairs, fn($x) => $x[1] > 0));
-
-      if (!$pairs) {
-        $message = 'Đơn hàng phải có ít nhất 1 sản phẩm (số lượng > 0).';
-      } else {
-        $conn->begin_transaction();
-        try {
-          $st = $conn->prepare('SELECT Trang_thai FROM DonHang WHERE Ma_don_hang = ? FOR UPDATE');
-          $st->bind_param('s', $ma_don);
-          $st->execute();
-          $orderCur = $st->get_result()->fetch_assoc();
-          if (!$orderCur) throw new Exception('Không tìm thấy đơn hàng.');
-          $currentStatus = $orderCur['Trang_thai'];
-
-          // Load old items for stock restore when needed
-          $oldItems = [];
-          if (in_array($currentStatus, ['confirmed', 'shipped', 'completed'], true)) {
-            $stOld = $conn->prepare('SELECT Ma_san_pham, So_luong FROM ChiTietDonHang WHERE Ma_don_hang = ?');
-            $stOld->bind_param('s', $ma_don);
-            $stOld->execute();
-            $resOld = $stOld->get_result();
-            while ($r = $resOld->fetch_assoc()) {
-              $oldItems[] = [(string)$r['Ma_san_pham'], (int)$r['So_luong']];
-            }
-            foreach ($oldItems as $it) {
-              [$spOld, $qtyOld] = $it;
-              $updRest = $conn->prepare('UPDATE TonKho SET So_luong = So_luong + ? WHERE Ma_san_pham = ?');
-              $updRest->bind_param('is', $qtyOld, $spOld);
-              $updRest->execute();
-            }
-          }
-
-          // Fetch new prices
-          $in = implode(',', array_fill(0, count($pairs), '?'));
-          $params = [];
-          foreach ($pairs as $p) $params[] = $p[0];
-          $types = str_repeat('s', count($params));
-          $stPrices = $conn->prepare("SELECT Ma_san_pham, Gia FROM SanPham WHERE Ma_san_pham IN ($in)");
-          $stPrices->bind_param($types, ...$params);
-          $stPrices->execute();
-          $resPrices = $stPrices->get_result();
-          $priceMap = [];
-          while ($r = $resPrices->fetch_assoc()) {
-            $priceMap[(string)$r['Ma_san_pham']] = (float)$r['Gia'];
-          }
-
-          $tong_tien = 0;
-          foreach ($pairs as $p) {
-            [$sp, $qty] = $p;
-            $gia = $priceMap[$sp] ?? null;
-            if ($gia === null) throw new Exception('Không tìm thấy giá sản phẩm: ' . $sp);
-            $tong_tien += $gia * $qty;
-          }
-
-          // Replace details
-          $del = $conn->prepare('DELETE FROM ChiTietDonHang WHERE Ma_don_hang = ?');
-          $del->bind_param('s', $ma_don);
-          $del->execute();
-
-          $ins = $conn->prepare('
-            INSERT INTO ChiTietDonHang (Ma_don_hang, Ma_san_pham, So_luong, Don_gia, Thanh_tien)
-            VALUES (?, ?, ?, ?, ?)
-          ');
-          foreach ($pairs as $p) {
-            [$sp, $qty] = $p;
-            $gia = (float)$priceMap[$sp];
-            $thanhTien = $gia * $qty;
-            $ins->bind_param('ssidd', $ma_don, $sp, $qty, $gia, $thanhTien);
-            $ins->execute();
-          }
-
-          // Update order header
-          $ma_nhan_vien = resolveEmployeeId($conn, $_SESSION['admin_id'] ?? '');
-          if ($ma_nhan_vien !== null) {
-            $upHead = $conn->prepare('UPDATE DonHang SET Ma_khach_hang = ?, Ma_nhan_vien = ?, Tong_tien = ? WHERE Ma_don_hang = ?');
-            $upHead->bind_param('ssds', $ma_khach_hang, $ma_nhan_vien, $tong_tien, $ma_don);
-          } else {
-            $upHead = $conn->prepare('UPDATE DonHang SET Ma_khach_hang = ?, Ma_nhan_vien = NULL, Tong_tien = ? WHERE Ma_don_hang = ?');
-            $upHead->bind_param('sds', $ma_khach_hang, $tong_tien, $ma_don);
-          }
-          $upHead->execute();
-
-          // Deduct new stock when status already deducted
-          if (in_array($currentStatus, ['confirmed', 'shipped', 'completed'], true)) {
-            foreach ($pairs as $p) {
-              [$sp, $qty] = $p;
-              $upd = $conn->prepare('UPDATE TonKho
-                SET So_luong = So_luong - ?
-                WHERE Ma_san_pham = ?
-                  AND (So_luong - ?) >= COALESCE(Muc_ton_toi_thieu, 0)');
-              $upd->bind_param('isi', $qty, $sp, $qty);
-              $upd->execute();
-              if ($upd->affected_rows < 1) {
-                throw new Exception('Không đủ tồn kho để cập nhật sản phẩm: ' . $sp);
-              }
-            }
-          }
-
-          $conn->commit();
-          header('Location: orders.php');
-          exit;
-        } catch (Throwable $e) {
-          $conn->rollback();
-          $message = 'Lỗi cập nhật đơn: ' . $e->getMessage() . '. Hãy kiểm tra dữ liệu bảng NhanVien hoặc ràng buộc Ma_nhan_vien trong bảng DonHang.';
-        }
-      }
-    }
+    $message = 'Chức năng sửa đơn hàng đã bị tắt.';
   } elseif ($act === 'delete_order') {
     if (!check_csrf($_POST['_csrf'] ?? '')) die('CSRF token không hợp lệ');
 
@@ -485,36 +367,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   }
 }
 
-// Search q (from topbar)
-$q = trim($_GET['q'] ?? '');
+// Search + date filters
+$q = trim((string)($_GET['q'] ?? ''));
+$filterDay = (int)($_GET['day'] ?? 0);
+$filterMonth = (int)($_GET['month'] ?? 0);
+$filterYear = (int)($_GET['year'] ?? 0);
+$perPage = 10;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$offset = ($page - 1) * $perPage;
+$totalRows = 0;
+$totalPages = 1;
+if ($filterDay < 1 || $filterDay > 31) $filterDay = 0;
+if ($filterMonth < 1 || $filterMonth > 12) $filterMonth = 0;
+if ($filterYear < 2000 || $filterYear > 2100) $filterYear = 0;
+$showAddOrder = (($_GET['add'] ?? '') === '1');
 
 if (!$view && !$edit) {
+  $orders = [];
+  $where = [];
+  $types = '';
+  $params = [];
+
   if ($q !== '') {
-    $orders = [];
+    $where[] = '(dh.Ma_don_hang LIKE ? OR kh.Ten_khach_hang LIKE ? OR kh.So_dien_thoai LIKE ?)';
     $like = '%' . $q . '%';
-    $st = $conn->prepare('
+    $types .= 'sss';
+    $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
+  }
+  if ($filterYear > 0) {
+    $where[] = 'YEAR(dh.Thoi_gian_tao) = ?';
+    $types .= 'i';
+    $params[] = $filterYear;
+  }
+  if ($filterMonth > 0) {
+    $where[] = 'MONTH(dh.Thoi_gian_tao) = ?';
+    $types .= 'i';
+    $params[] = $filterMonth;
+  }
+  if ($filterDay > 0) {
+    $where[] = 'DAY(dh.Thoi_gian_tao) = ?';
+    $types .= 'i';
+    $params[] = $filterDay;
+  }
+
+  $sql = "
       SELECT dh.Ma_don_hang, dh.Tong_tien, dh.Trang_thai, dh.Thoi_gian_tao,
              kh.Ten_khach_hang, kh.So_dien_thoai
       FROM DonHang dh
-      LEFT JOIN KhachHang kh ON dh.Ma_khach_hang = kh.Ma_khach_hang
-      WHERE dh.Ma_don_hang LIKE ? OR kh.Ten_khach_hang LIKE ? OR kh.So_dien_thoai LIKE ?
-      ORDER BY dh.Thoi_gian_tao DESC
-      LIMIT 200
-    ');
-    $st->bind_param('sss', $like, $like, $like);
+      LEFT JOIN `{$khTable}` kh ON dh.Ma_khach_hang = kh.Ma_khach_hang
+  ";
+  $sqlCount = "SELECT COUNT(*) AS c FROM DonHang dh LEFT JOIN `{$khTable}` kh ON dh.Ma_khach_hang = kh.Ma_khach_hang";
+  if ($where !== []) {
+    $sql .= ' WHERE ' . implode(' AND ', $where);
+    $sqlCount .= ' WHERE ' . implode(' AND ', $where);
+  }
+  $cnt = $conn->prepare($sqlCount);
+  if ($cnt) {
+    if ($types !== '') $cnt->bind_param($types, ...$params);
+    $cnt->execute();
+    $totalRows = (int)(($cnt->get_result()->fetch_assoc()['c'] ?? 0));
+  }
+  $totalPages = max(1, (int)ceil($totalRows / $perPage));
+  if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+  $sql .= ' ORDER BY dh.Thoi_gian_tao DESC LIMIT ? OFFSET ?';
+
+  $st = $conn->prepare($sql);
+  if ($st) {
+    $typesWithPage = $types . 'ii';
+    $paramsWithPage = $params;
+    $paramsWithPage[] = $perPage;
+    $paramsWithPage[] = $offset;
+    $st->bind_param($typesWithPage, ...$paramsWithPage);
     $st->execute();
     $res = $st->get_result();
-    while ($r = $res->fetch_assoc()) $orders[] = $r;
-  } else {
-    $orders = [];
-    $res = $conn->query('
-      SELECT dh.Ma_don_hang, dh.Tong_tien, dh.Trang_thai, dh.Thoi_gian_tao,
-             kh.Ten_khach_hang, kh.So_dien_thoai
-      FROM DonHang dh
-      LEFT JOIN KhachHang kh ON dh.Ma_khach_hang = kh.Ma_khach_hang
-      ORDER BY dh.Thoi_gian_tao DESC
-      LIMIT 200
-    ');
     while ($r = $res->fetch_assoc()) $orders[] = $r;
   }
 }
@@ -523,25 +450,63 @@ if (!$view && !$edit) {
 <div class="page-header">
   <div>
     <div class="title">QUẢN LÝ ĐƠN HÀNG</div>
-    <div class="subtitle">Danh sách đơn đặt hàng và theo dõi trạng thái</div>
+    <div class="subtitle">Tìm theo mã đơn, tên khách, số điện thoại + lọc theo ngày/tháng/năm</div>
   </div>
+
+  <?php if ($totalPages > 1): ?>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <?php $base = ['q'=>$q,'day'=>$filterDay ?: null,'month'=>$filterMonth ?: null,'year'=>$filterYear ?: null]; ?>
+      <?php if ($page > 1): ?>
+        <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="orders.php?<?php echo htmlspecialchars(http_build_query(array_filter($base, fn($v) => $v !== null) + ['page'=>$page-1])); ?>">← Trước</a>
+      <?php endif; ?>
+      <span style="color:#a88;">Trang <?php echo (int)$page; ?> / <?php echo (int)$totalPages; ?></span>
+      <?php if ($page < $totalPages): ?>
+        <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="orders.php?<?php echo htmlspecialchars(http_build_query(array_filter($base, fn($v) => $v !== null) + ['page'=>$page+1])); ?>">Sau →</a>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
   <div class="header-actions">
-    <button type="button" class="add-btn" onclick="var el=document.getElementById('addSectionOrder'); if(!el) return false; el.style.display='block'; window.scrollTo({top:0, behavior:'smooth'}); return false;">+ TẠO ĐƠN HÀNG MỚI</button>
+    <a class="add-btn" style="text-decoration:none;" href="orders.php?add=1">+ TẠO ĐƠN HÀNG MỚI</a>
   </div>
 </div>
 <?php if ($message) echo '<div style="margin-bottom:12px;color:#6b3f3f">'.htmlspecialchars($message).'</div>'; ?>
+
+<?php if (!$view && !$edit): ?>
+  <section style="margin-bottom:14px;">
+    <form method="get" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+      <div style="min-width:260px;flex:1;">
+        <label style="display:block;color:#6b3f3f;font-size:13px;">Tìm kiếm</label>
+        <input class="form-input" type="text" name="q" value="<?php echo htmlspecialchars($q); ?>" placeholder="Mã đơn / Tên khách / Số điện thoại">
+      </div>
+      <div style="width:110px;">
+        <label style="display:block;color:#6b3f3f;font-size:13px;">Ngày</label>
+        <input class="form-input" type="number" min="1" max="31" name="day" value="<?php echo $filterDay > 0 ? (int)$filterDay : ''; ?>" placeholder="DD">
+      </div>
+      <div style="width:110px;">
+        <label style="display:block;color:#6b3f3f;font-size:13px;">Tháng</label>
+        <input class="form-input" type="number" min="1" max="12" name="month" value="<?php echo $filterMonth > 0 ? (int)$filterMonth : ''; ?>" placeholder="MM">
+      </div>
+      <div style="width:130px;">
+        <label style="display:block;color:#6b3f3f;font-size:13px;">Năm</label>
+        <input class="form-input" type="number" min="2000" max="2100" name="year" value="<?php echo $filterYear > 0 ? (int)$filterYear : ''; ?>" placeholder="YYYY">
+      </div>
+      <button class="add-btn" type="submit" style="padding:10px 16px;">Lọc</button>
+      <a class="icon-btn" href="orders.php" style="text-decoration:none;padding:10px 14px;">Xóa lọc</a>
+    </form>
+  </section>
+<?php endif; ?>
 
 <?php if ($view):
     // fetch order and items
     $order = null;
     $items = [];
 
-    $st = $conn->prepare('
+    $st = $conn->prepare("
       SELECT dh.*, kh.Ten_khach_hang, kh.So_dien_thoai
       FROM DonHang dh
-      LEFT JOIN KhachHang kh ON dh.Ma_khach_hang = kh.Ma_khach_hang
+      LEFT JOIN `{$khTable}` kh ON dh.Ma_khach_hang = kh.Ma_khach_hang
       WHERE dh.Ma_don_hang = ?
-    ');
+    ");
     $st->bind_param('s', $view);
     $st->execute();
     $order = $st->get_result()->fetch_assoc();
@@ -637,12 +602,12 @@ if (!$view && !$edit) {
   <?php
     $order = null;
     $items = [];
-    $st = $conn->prepare('
+    $st = $conn->prepare("
       SELECT dh.*, kh.Ten_khach_hang, kh.So_dien_thoai
       FROM DonHang dh
-      LEFT JOIN KhachHang kh ON dh.Ma_khach_hang = kh.Ma_khach_hang
+      LEFT JOIN `{$khTable}` kh ON dh.Ma_khach_hang = kh.Ma_khach_hang
       WHERE dh.Ma_don_hang = ?
-    ');
+    ");
     $st->bind_param('s', $edit);
     $st->execute();
     $order = $st->get_result()->fetch_assoc();
@@ -661,7 +626,7 @@ if (!$view && !$edit) {
 
     // preload dropdowns
     $customers = [];
-    $cst = $conn->query('SELECT Ma_khach_hang, Ten_khach_hang FROM KhachHang ORDER BY Ten_khach_hang');
+    $cst = $conn->query("SELECT Ma_khach_hang, Ten_khach_hang FROM `{$khTable}` ORDER BY Ten_khach_hang");
     while ($r = $cst->fetch_assoc()) $customers[] = $r;
 
     $categories = [];
@@ -867,6 +832,7 @@ if (!$view && !$edit) {
         <tr>
           <th>Mã đơn</th>
           <th>Khách</th>
+          <th>SĐT</th>
           <th>Tổng</th>
           <th>Trạng thái</th>
           <th>Thời gian</th>
@@ -878,12 +844,12 @@ if (!$view && !$edit) {
         <tr>
           <td><?php echo htmlspecialchars($o['Ma_don_hang']);?></td>
           <td><?php echo htmlspecialchars($o['Ten_khach_hang'] ?? $o['Ma_khach_hang'] ?? ''); ?></td>
+          <td><?php echo htmlspecialchars($o['So_dien_thoai'] ?? ''); ?></td>
           <td><?php echo money_vn($o['Tong_tien'] ?? 0);?></td>
           <td><span class="badge"><?php echo htmlspecialchars(map_order_status($o['Trang_thai'] ?? ''));?></span></td>
           <td><?php echo htmlspecialchars($o['Thoi_gian_tao']);?></td>
           <td>
             <a class="icon-btn" href="orders.php?view=<?php echo urlencode($o['Ma_don_hang']);?>" title="Xem chi tiết hóa đơn">🧾</a>
-            <a class="icon-btn" href="orders.php?edit=<?php echo urlencode($o['Ma_don_hang']);?>" title="Sửa đơn" style="margin-left:6px;">✏️</a>
             <form method="post" style="display:inline" onsubmit="return confirm('Xác nhận xóa đơn?')">
               <?php echo csrf_input(); ?>
               <input type="hidden" name="action" value="delete_order">
@@ -898,10 +864,10 @@ if (!$view && !$edit) {
   </div>
 
   <!-- Add order section -->
-  <section id="addSectionOrder" style="margin:18px 0; display:none;">
+  <section id="addSectionOrder" style="margin:18px 0; display:<?php echo $showAddOrder ? 'block' : 'none'; ?>;">
     <?php
       $customers = [];
-      $cst = $conn->query('SELECT Ma_khach_hang, Ten_khach_hang FROM KhachHang ORDER BY Ten_khach_hang');
+      $cst = $conn->query("SELECT Ma_khach_hang, Ten_khach_hang FROM `{$khTable}` ORDER BY Ten_khach_hang");
       while ($r = $cst->fetch_assoc()) $customers[] = $r;
 
       $categories = [];
@@ -996,7 +962,7 @@ if (!$view && !$edit) {
 
         <div style="display:flex; gap:10px; justify-content:flex-end;">
           <button class="add-btn" type="submit">Lưu đơn</button>
-          <button type="button" class="icon-btn" onclick="closeAddOrder()" style="padding:10px 14px; border:1px solid #f0dede; border-radius:10px;">Hủy</button>
+          <a class="icon-btn" href="orders.php" style="text-decoration:none;padding:10px 14px; border:1px solid #f0dede; border-radius:10px;">Hủy</a>
         </div>
       </form>
     </div>
@@ -1076,10 +1042,6 @@ if (!$view && !$edit) {
 
   </section>
 
-  <script>
-    function openAddOrder(){ document.getElementById('addSectionOrder').style.display='block'; window.scrollTo({top:0, behavior:'smooth'}); }
-    function closeAddOrder(){ document.getElementById('addSectionOrder').style.display='none'; }
-  </script>
 <?php endif; ?>
 
 <?php include 'includes/footer.php';

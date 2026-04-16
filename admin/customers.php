@@ -283,28 +283,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 // Search
 $q = trim($_GET['q'] ?? '');
+$perPage = 10;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$offset = ($page - 1) * $perPage;
+$totalRows = 0;
+$totalPages = 1;
 $customers = [];
 if ($q !== '') {
     if (isset($pdo)) {
-        $stmt = $pdo->prepare("SELECT * FROM KhachHang WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ? ORDER BY Thoi_gian_tao DESC");
         $like = "%$q%";
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM KhachHang WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ?");
+        $cnt->execute([$like, $like]);
+        $totalRows = (int)$cnt->fetchColumn();
+        $totalPages = max(1, (int)ceil($totalRows / $perPage));
+        if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+        $stmt = $pdo->prepare("SELECT * FROM KhachHang WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ? ORDER BY Thoi_gian_tao DESC LIMIT " . (int)$perPage . " OFFSET " . (int)$offset);
         $stmt->execute([$like, $like]);
         $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
         $like = "%$q%";
-        $st = $conn->prepare("SELECT * FROM `{$khTable}` WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ? ORDER BY Thoi_gian_tao DESC");
-        $st->bind_param('ss', $like, $like);
+        $cnt = $conn->prepare("SELECT COUNT(*) AS c FROM `{$khTable}` WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ?");
+        $cnt->bind_param('ss', $like, $like);
+        $cnt->execute();
+        $totalRows = (int)(($cnt->get_result()->fetch_assoc()['c'] ?? 0));
+        $totalPages = max(1, (int)ceil($totalRows / $perPage));
+        if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+        $st = $conn->prepare("SELECT * FROM `{$khTable}` WHERE Ten_khach_hang LIKE ? OR So_dien_thoai LIKE ? ORDER BY Thoi_gian_tao DESC LIMIT ? OFFSET ?");
+        $st->bind_param('ssii', $like, $like, $perPage, $offset);
         $st->execute();
         $res = $st->get_result();
         while ($r = $res->fetch_assoc()) $customers[] = $r;
     }
 } else {
     if (isset($pdo)) {
-        $stmt = $pdo->query('SELECT * FROM KhachHang ORDER BY Thoi_gian_tao DESC LIMIT 100');
+        $cnt = $pdo->query('SELECT COUNT(*) FROM KhachHang');
+        $totalRows = (int)$cnt->fetchColumn();
+        $totalPages = max(1, (int)ceil($totalRows / $perPage));
+        if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+        $stmt = $pdo->query('SELECT * FROM KhachHang ORDER BY Thoi_gian_tao DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset);
         $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        $res = $conn->query("SELECT * FROM `{$khTable}` ORDER BY Thoi_gian_tao DESC LIMIT 100");
+        $cnt = $conn->query("SELECT COUNT(*) AS c FROM `{$khTable}`");
+        $totalRows = (int)(($cnt ? $cnt->fetch_assoc()['c'] : 0));
+        $totalPages = max(1, (int)ceil($totalRows / $perPage));
+        if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+        $res = $conn->query("SELECT * FROM `{$khTable}` ORDER BY Thoi_gian_tao DESC LIMIT " . (int)$perPage . " OFFSET " . (int)$offset);
         while ($r = $res->fetch_assoc()) $customers[] = $r;
+    }
+}
+
+// Purchase history by customer (optional detail panel)
+$historyCustomerId = trim((string)($_GET['history_kh'] ?? ''));
+$historyCustomer = null;
+$purchaseHistory = [];
+if ($historyCustomerId !== '') {
+    if (isset($pdo)) {
+        $stKh = $pdo->prepare('SELECT Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email FROM KhachHang WHERE Ma_khach_hang = ? LIMIT 1');
+        $stKh->execute([$historyCustomerId]);
+        $historyCustomer = $stKh->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        $sqlHis = "SELECT dh.Ma_don_hang, dh.Tong_tien, dh.Trang_thai, dh.Thoi_gian_tao,
+                  COALESCE(SUM(ct.So_luong), 0) AS So_luong_san_pham
+                  FROM DonHang dh
+                  LEFT JOIN ChiTietDonHang ct ON ct.Ma_don_hang = dh.Ma_don_hang
+                  WHERE dh.Ma_khach_hang = ?
+                  GROUP BY dh.Ma_don_hang
+                  ORDER BY dh.Thoi_gian_tao DESC, dh.Ma_don_hang DESC";
+        $stHis = $pdo->prepare($sqlHis);
+        $stHis->execute([$historyCustomerId]);
+        $purchaseHistory = $stHis->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $stKh = $conn->prepare("SELECT Ma_khach_hang, Ten_khach_hang, So_dien_thoai, Email FROM `{$khTable}` WHERE Ma_khach_hang = ? LIMIT 1");
+        if ($stKh) {
+            $stKh->bind_param('s', $historyCustomerId);
+            $stKh->execute();
+            $historyCustomer = $stKh->get_result()->fetch_assoc() ?: null;
+        }
+
+        $sqlHis = "SELECT dh.Ma_don_hang, dh.Tong_tien, dh.Trang_thai, dh.Thoi_gian_tao,
+                  COALESCE(SUM(ct.So_luong), 0) AS So_luong_san_pham
+                  FROM DonHang dh
+                  LEFT JOIN ChiTietDonHang ct ON ct.Ma_don_hang = dh.Ma_don_hang
+                  WHERE dh.Ma_khach_hang = ?
+                  GROUP BY dh.Ma_don_hang
+                  ORDER BY dh.Thoi_gian_tao DESC, dh.Ma_don_hang DESC";
+        $stHis = $conn->prepare($sqlHis);
+        if ($stHis) {
+            $stHis->bind_param('s', $historyCustomerId);
+            $stHis->execute();
+            $rsHis = $stHis->get_result();
+            while ($row = $rsHis->fetch_assoc()) {
+                $purchaseHistory[] = $row;
+            }
+        }
     }
 }
 
@@ -316,6 +387,13 @@ if ($q !== '') {
     <div class="subtitle">Danh sách khách hàng và thông tin liên hệ</div>
   </div>
   <div class="header-actions">
+    <form method="get" action="" class="admin-inline-search" style="display:flex;align-items:center;gap:8px;margin:0;">
+      <input type="search" name="q" value="<?php echo htmlspecialchars($q); ?>" placeholder="Tìm theo tên hoặc SĐT..." class="search-input" aria-label="Tìm khách hàng theo tên hoặc số điện thoại">
+      <button type="submit" class="add-btn" style="padding:8px 14px;">Tìm</button>
+      <?php if ($q !== ''): ?>
+        <a href="customers.php" class="icon-btn" style="text-decoration:none;padding:8px 12px;white-space:nowrap;">Xóa lọc</a>
+      <?php endif; ?>
+    </form>
     <button type="button" class="add-btn" onclick="openAddCustomer()">+ THÊM KHÁCH HÀNG MỚI</button>
   </div>
 </div>
@@ -341,6 +419,21 @@ if ($q !== '') {
     </div>
   </form>
 </section>
+<?php if ($totalPages > 1): ?>
+  <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <?php
+      $base = ['q' => $q];
+      if ($historyCustomerId !== '') $base['history_kh'] = $historyCustomerId;
+    ?>
+    <?php if ($page > 1): ?>
+      <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="customers.php?<?php echo htmlspecialchars(http_build_query($base + ['page' => $page - 1])); ?>">← Trước</a>
+    <?php endif; ?>
+    <span style="color:#a88;">Trang <?php echo (int)$page; ?> / <?php echo (int)$totalPages; ?></span>
+    <?php if ($page < $totalPages): ?>
+      <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="customers.php?<?php echo htmlspecialchars(http_build_query($base + ['page' => $page + 1])); ?>">Sau →</a>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <section>
   <div class="table-responsive">
@@ -358,6 +451,14 @@ if ($q !== '') {
             <td><?php echo htmlspecialchars($c['Thoi_gian_tao']);?></td>
             <td>
               <div class="action-icons">
+                <a class="icon-btn" title="Xem lịch sử mua hàng" href="customers.php?<?php
+                    $params = [];
+                    if ($q !== '') {
+                        $params['q'] = $q;
+                    }
+                    $params['history_kh'] = $c['Ma_khach_hang'];
+                    echo htmlspecialchars(http_build_query($params));
+                ?>">🧾</a>
                 <form method="post" style="display:inline">
                   <?php echo csrf_input(); ?>
                   <input type="hidden" name="action" value="delete">
@@ -373,6 +474,53 @@ if ($q !== '') {
     </table>
   </div>
 </section>
+
+<?php if ($historyCustomer): ?>
+<section style="margin-top:16px;">
+  <div class="panel">
+    <h3 style="margin-top:0;">Lịch sử mua hàng — <?php echo htmlspecialchars($historyCustomer['Ten_khach_hang'] ?? ''); ?></h3>
+    <div style="margin-bottom:10px;color:#a88;">
+      Mã KH: <strong><?php echo htmlspecialchars($historyCustomer['Ma_khach_hang'] ?? ''); ?></strong>
+      <?php if (!empty($historyCustomer['So_dien_thoai'])): ?>
+        · SĐT: <?php echo htmlspecialchars($historyCustomer['So_dien_thoai']); ?>
+      <?php endif; ?>
+      <?php if (!empty($historyCustomer['Email'])): ?>
+        · Email: <?php echo htmlspecialchars($historyCustomer['Email']); ?>
+      <?php endif; ?>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Mã đơn</th>
+            <th>Thời gian</th>
+            <th>Số lượng SP</th>
+            <th>Tổng tiền</th>
+            <th>Trạng thái</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($purchaseHistory as $h): ?>
+            <tr>
+              <td><?php echo htmlspecialchars($h['Ma_don_hang'] ?? ''); ?></td>
+              <td><?php echo htmlspecialchars($h['Thoi_gian_tao'] ?? ''); ?></td>
+              <td><?php echo (int)($h['So_luong_san_pham'] ?? 0); ?></td>
+              <td><?php echo number_format((float)($h['Tong_tien'] ?? 0), 0, ',', '.'); ?>đ</td>
+              <td><?php echo htmlspecialchars($h['Trang_thai'] ?? ''); ?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php if ($purchaseHistory === []): ?>
+            <tr><td colspan="5" style="color:#a88;">Khách hàng này chưa có đơn mua hàng.</td></tr>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:12px;">
+      <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="customers.php<?php echo $q !== '' ? ('?q=' . urlencode($q)) : ''; ?>">Đóng lịch sử</a>
+    </p>
+  </div>
+</section>
+<?php endif; ?>
 
 <div id="editModal" style="display:none">
   <div class="modal-overlay" role="presentation" onclick="if(event.target===this) document.getElementById('editModal').style.display='none'">

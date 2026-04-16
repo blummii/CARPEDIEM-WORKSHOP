@@ -243,6 +243,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 // Fetch products; tìm kiếm ?q= (ô Search trên cùng hoặc form dưới)
 $q = trim($_GET['q'] ?? '');
+$perPage = 10;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$offset = ($page - 1) * $perPage;
+$totalRows = 0;
+$totalPages = 1;
 $products = [];
 $sqlProd = 'SELECT s.Ma_san_pham, s.Ma_danh_muc, s.Ten_san_pham, s.Gia, s.Mo_ta, s.Hinh_anh, s.Trang_thai, c.Ten_danh_muc, t.So_luong
   FROM SanPham s
@@ -251,12 +256,23 @@ $sqlProd = 'SELECT s.Ma_san_pham, s.Ma_danh_muc, s.Ten_san_pham, s.Gia, s.Mo_ta,
 if ($q !== '') {
   $like = '%' . $q . '%';
   if (isset($pdo)) {
-    $stmt = $pdo->prepare($sqlProd . ' WHERE s.Ten_san_pham LIKE ? OR IFNULL(s.Mo_ta, \'\') LIKE ? OR s.Ma_san_pham LIKE ? OR IFNULL(c.Ten_danh_muc, \'\') LIKE ? ORDER BY s.Ma_san_pham DESC');
+    $cnt = $pdo->prepare('SELECT COUNT(*) FROM SanPham s LEFT JOIN DanhMucSanPham c ON s.Ma_danh_muc = c.Ma_danh_muc WHERE s.Ten_san_pham LIKE ? OR IFNULL(s.Mo_ta, \'\') LIKE ? OR s.Ma_san_pham LIKE ? OR IFNULL(c.Ten_danh_muc, \'\') LIKE ?');
+    $cnt->execute([$like, $like, $like, $like]);
+    $totalRows = (int)$cnt->fetchColumn();
+    $totalPages = max(1, (int)ceil($totalRows / $perPage));
+    if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+    $stmt = $pdo->prepare($sqlProd . ' WHERE s.Ten_san_pham LIKE ? OR IFNULL(s.Mo_ta, \'\') LIKE ? OR s.Ma_san_pham LIKE ? OR IFNULL(c.Ten_danh_muc, \'\') LIKE ? ORDER BY s.Ma_san_pham DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset);
     $stmt->execute([$like, $like, $like, $like]);
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
   } elseif (isset($conn)) {
-    $st = $conn->prepare($sqlProd . ' WHERE s.Ten_san_pham LIKE ? OR IFNULL(s.Mo_ta, \'\') LIKE ? OR s.Ma_san_pham LIKE ? OR IFNULL(c.Ten_danh_muc, \'\') LIKE ? ORDER BY s.Ma_san_pham DESC');
-    $st->bind_param('ssss', $like, $like, $like, $like);
+    $cnt = $conn->prepare('SELECT COUNT(*) AS c FROM SanPham s LEFT JOIN DanhMucSanPham c ON s.Ma_danh_muc = c.Ma_danh_muc WHERE s.Ten_san_pham LIKE ? OR IFNULL(s.Mo_ta, \'\') LIKE ? OR s.Ma_san_pham LIKE ? OR IFNULL(c.Ten_danh_muc, \'\') LIKE ?');
+    $cnt->bind_param('ssss', $like, $like, $like, $like);
+    $cnt->execute();
+    $totalRows = (int)(($cnt->get_result()->fetch_assoc()['c'] ?? 0));
+    $totalPages = max(1, (int)ceil($totalRows / $perPage));
+    if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+    $st = $conn->prepare($sqlProd . ' WHERE s.Ten_san_pham LIKE ? OR IFNULL(s.Mo_ta, \'\') LIKE ? OR s.Ma_san_pham LIKE ? OR IFNULL(c.Ten_danh_muc, \'\') LIKE ? ORDER BY s.Ma_san_pham DESC LIMIT ? OFFSET ?');
+    $st->bind_param('ssssii', $like, $like, $like, $like, $perPage, $offset);
     $st->execute();
     $res = $st->get_result();
     while ($r = $res->fetch_assoc()) {
@@ -265,10 +281,18 @@ if ($q !== '') {
   }
 } else {
   if (isset($pdo)) {
-    $stmt = $pdo->query($sqlProd . ' ORDER BY s.Ma_san_pham DESC');
+    $cnt = $pdo->query('SELECT COUNT(*) FROM SanPham');
+    $totalRows = (int)$cnt->fetchColumn();
+    $totalPages = max(1, (int)ceil($totalRows / $perPage));
+    if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+    $stmt = $pdo->query($sqlProd . ' ORDER BY s.Ma_san_pham DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset);
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
   } elseif (isset($conn)) {
-    $res = $conn->query($sqlProd . ' ORDER BY s.Ma_san_pham DESC');
+    $cnt = $conn->query('SELECT COUNT(*) AS c FROM SanPham');
+    $totalRows = (int)(($cnt ? $cnt->fetch_assoc()['c'] : 0));
+    $totalPages = max(1, (int)ceil($totalRows / $perPage));
+    if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
+    $res = $conn->query($sqlProd . ' ORDER BY s.Ma_san_pham DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset);
     while ($r = $res->fetch_assoc()) {
       $products[] = $r;
     }
@@ -320,6 +344,17 @@ if ($q !== '') {
     </div>
   </form>
 </section>
+<?php if ($totalPages > 1): ?>
+  <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <?php if ($page > 1): ?>
+      <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="products.php?<?php echo htmlspecialchars(http_build_query(['q'=>$q,'page'=>$page-1])); ?>">← Trước</a>
+    <?php endif; ?>
+    <span style="color:#a88;">Trang <?php echo (int)$page; ?> / <?php echo (int)$totalPages; ?></span>
+    <?php if ($page < $totalPages): ?>
+      <a class="icon-btn" style="text-decoration:none;padding:8px 12px;" href="products.php?<?php echo htmlspecialchars(http_build_query(['q'=>$q,'page'=>$page+1])); ?>">Sau →</a>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <section>
   <div class="table-responsive">
