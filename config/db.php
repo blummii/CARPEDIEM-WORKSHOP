@@ -3,7 +3,7 @@
 $servername = "localhost";
 $username = "root";
 $password = ""; // Mặc định của XAMPP thường để trống
-$dbname = "qlworkshop";
+$dbname = "qlworkshop (1)";
 
 // Tạo kết nối
 $conn = new mysqli($servername, $username, $password, $dbname);

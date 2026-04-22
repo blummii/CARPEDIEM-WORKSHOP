@@ -1,88 +1,105 @@
 let selectedSeats = [];
-let currentPricePerSeat = 0;
+let seatPrice = 0;
+let bookedSeats = [];
 
-// Hàm mở Popup
-function openPopup(id, maxSeats, occupiedCount, pricePerSeat) {
-    const popup = document.getElementById("popup");
-    const grid = document.getElementById("seat-grid");
-    currentPricePerSeat = Number(pricePerSeat) || 0;
-    if (currentPricePerSeat <= 0) {
-        const btn = document.querySelector('[data-lich="' + String(id) + '"]');
-        if (btn) {
-            currentPricePerSeat = Number(btn.getAttribute("data-gia")) || 0;
-        }
-    }
-    
-    // Hiển thị popup dạng flex để căn giữa
-    popup.style.display = "flex";
-    document.getElementById("id_lich").value = id;
-    
-    // Reset dữ liệu cũ
-    grid.innerHTML = ""; 
-    selectedSeats = []; 
-    updateUI();
+/* MỞ POPUP */
+function openPopup(maLich, totalSeats, price) {
+    document.getElementById("popup").style.display = "flex";
+    document.getElementById("id_lich").value = maLich;
 
-    // Vòng lặp tạo ghế
-    for (let i = 1; i <= maxSeats; i++) {
-        const seat = document.createElement("div");
-        seat.classList.add("seat"); // Class phải khớp với CSS
-        
-        // Kiểm tra nếu ghế đã bị chiếm (occupiedCount lấy từ database)
-        if (i <= occupiedCount) {
-            seat.classList.add("occupied");
-            seat.innerText = "X";
-        } else {
-            seat.classList.add("available");
-            seat.innerText = i;
-            // Gán sự kiện click cho ghế trống
-            seat.onclick = function() {
-                toggleSeat(this, i);
-            };
-        }
-        grid.appendChild(seat);
-    }
+    selectedSeats = [];
+    bookedSeats = [];
+    seatPrice = Number(price);
+
+    fetch("layghe.php?ma_lich=" + encodeURIComponent(maLich))
+        .then(res => res.json())
+        .then(data => {
+            bookedSeats = data.map(String);
+            renderSeats(totalSeats);
+            updateDisplay();
+        })
+        .catch(() => {
+            bookedSeats = [];
+            renderSeats(totalSeats);
+            updateDisplay();
+        });
 }
 
-// Hàm đóng Popup
+/* ĐÓNG POPUP */
 function closePopup() {
     document.getElementById("popup").style.display = "none";
 }
 
-// Hàm chọn/hủy chọn ghế
-function toggleSeat(seatElem, seatNum) {
-    if (selectedSeats.includes(seatNum)) {
-        // Nếu đã chọn rồi thì bỏ chọn
-        selectedSeats = selectedSeats.filter(s => s !== seatNum);
-        seatElem.classList.remove("selected");
-    } else {
-        // Nếu chưa chọn thì thêm vào danh sách
-        selectedSeats.push(seatNum);
-        seatElem.classList.add("selected");
-    }
-    updateUI();
-}
+/* VẼ GHẾ */
+function renderSeats(totalSeats) {
+    const grid = document.getElementById("seat-grid");
+    grid.innerHTML = "";
 
-// Cập nhật giao diện (Số ghế hiển thị và Tổng tiền)
-function updateUI() {
-    const displaySeats = document.getElementById("display-seats");
-    const displayTotal = document.getElementById("display-total");
-    const inputSeats = document.getElementById("selected_seats");
+    for (let i = 1; i <= totalSeats; i++) {
+        const seat = document.createElement("div");
+        seat.innerText = i;
+        seat.classList.add("seat");
 
-    if (selectedSeats.length > 0) {
-        inputSeats.value = selectedSeats.join(",");
-        displaySeats.innerText = selectedSeats.sort((a,b) => a-b).join(", ");
-        displayTotal.innerText = (selectedSeats.length * currentPricePerSeat).toLocaleString() + "đ";
-    } else {
-        inputSeats.value = "";
-        displaySeats.innerText = "Chưa chọn";
-        displayTotal.innerText = "0đ";
+        if (bookedSeats.includes(String(i))) {
+            seat.classList.add("occupied");
+        } else {
+            seat.classList.add("available");
+            seat.onclick = () => toggleSeat(i, seat);
+        }
+
+        grid.appendChild(seat);
     }
 }
 
-// Đóng popup khi click ra ngoài vùng trắng
-window.onclick = function(event) {
+/* CHỌN / BỎ CHỌN */
+function toggleSeat(number, seatDiv) {
+    if (selectedSeats.includes(number)) {
+        selectedSeats = selectedSeats.filter(x => x !== number);
+        seatDiv.classList.remove("selected");
+        seatDiv.classList.add("available");
+    } else {
+        selectedSeats.push(number);
+        seatDiv.classList.remove("available");
+        seatDiv.classList.add("selected");
+    }
+
+    updateDisplay();
+}
+
+/* CẬP NHẬT */
+function updateDisplay() {
+    selectedSeats.sort((a, b) => a - b);
+
+    document.getElementById("selected_seats").value =
+        selectedSeats.join(",");
+
+    document.getElementById("seatText").innerText =
+        selectedSeats.length
+            ? selectedSeats.join(", ")
+            : "Chưa chọn";
+
+    const radio = document.querySelector('input[name="hinh_thuc_tt"]:checked');
+
+    let percent = radio ? Number(radio.value) : 100;
+
+    let total = selectedSeats.length * seatPrice;
+    let needPay = total * percent / 100;
+
+    document.getElementById("tongTien").innerText =
+        needPay.toLocaleString("vi-VN") + "đ";
+}
+
+/* RADIO THANH TOÁN */
+document.addEventListener("change", function (e) {
+    if (e.target.name === "hinh_thuc_tt") {
+        updateDisplay();
+    }
+});
+
+/* CLICK NGOÀI POPUP */
+window.addEventListener("click", function (e) {
     const popup = document.getElementById("popup");
-    if (event.target == popup) {
+    if (e.target === popup) {
         closePopup();
     }
-}
+});
