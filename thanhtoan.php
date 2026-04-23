@@ -168,7 +168,16 @@ h1{
 </div>
 
 <form action="xacnhan_thanhtoan.php" method="POST">
-    <button class="btn">✅ Tôi đã thanh toán</button>
+
+<input type="email" name="email_xacnhan"
+placeholder="Nhập email nhận xác nhận"
+required
+style="width:100%;padding:12px;margin:15px 0;">
+
+<button class="btn">
+Tôi đã thanh toán
+</button>
+
 </form>
 
 </div>

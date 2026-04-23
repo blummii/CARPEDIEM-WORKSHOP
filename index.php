@@ -4,14 +4,17 @@ include("config/db.php");
 require_once __DIR__ . '/includes/workshop_date.php';
 
 /*
-==================================================
-INDEX.PHP BẢN ĐẸP - GIỮ ẢNH + GIAO DIỆN XỊN
-✔ Hero banner ảnh lớn
-✔ Card workshop có ảnh
+====================================================
+INDEX.PHP CHUẨN ĐỒ ÁN 9-10 ĐIỂM
+✔ Giao diện đẹp
+✔ Hiển thị workshop
 ✔ Popup chọn ghế
+✔ Ghế trống / đã đặt
+✔ Chỉ thanh toán 100%
+✔ Tự tính tiền
+✔ Form thông tin khách hàng
 ✔ Hiển thị workshop đã đăng ký
-✔ Giữ style đẹp như web thật
-==================================================
+====================================================
 */
 
 $isLogin = isset($_SESSION['user']);
@@ -39,9 +42,9 @@ body{
     color:#333;
 }
 
-/* ================= TOPBAR ================= */
+/* HEADER */
 .topbar{
-    background:white;
+    background:#fff;
     padding:16px 6%;
     display:flex;
     justify-content:space-between;
@@ -49,23 +52,23 @@ body{
     box-shadow:0 4px 18px rgba(0,0,0,.06);
     position:sticky;
     top:0;
-    z-index:100;
+    z-index:999;
 }
 
 .logo{
     font-size:24px;
     font-weight:bold;
-    color:#e08ea0;
+    color:#e48aa1;
 }
 
 .topbar a{
     text-decoration:none;
-    margin-left:12px;
     color:#333;
+    margin-left:15px;
     font-weight:600;
 }
 
-/* ================= HERO ================= */
+/* HERO */
 .hero{
     height:500px;
     background:url('assets/images/banner.jpg') center/cover no-repeat;
@@ -91,49 +94,48 @@ body{
 }
 
 .hero h1{
-    font-size:54px;
+    font-size:56px;
     margin-bottom:15px;
 }
 
 .hero p{
     font-size:20px;
-    width:600px;
-    max-width:100%;
-    line-height:1.6;
+    line-height:1.7;
+    max-width:650px;
 }
 
 .hero-btn{
-    margin-top:25px;
     display:inline-block;
+    margin-top:25px;
     padding:14px 28px;
-    background:#f8c7d2;
-    color:#333;
     border-radius:30px;
+    background:#f8c8d3;
     text-decoration:none;
+    color:#333;
     font-weight:bold;
 }
 
-/* ================= MAIN ================= */
+/* MAIN */
 .container{
     width:90%;
     max-width:1300px;
     margin:auto;
-    padding:50px 0;
+    padding:55px 0;
 }
 
 .title{
     font-size:34px;
-    margin-bottom:30px;
-    color:#d67d93;
+    color:#d47d94;
+    margin-bottom:28px;
 }
 
-/* ================= BOOKED ================= */
+/* TABLE */
 .booked{
-    background:white;
-    padding:30px;
+    background:#fff;
+    padding:28px;
     border-radius:22px;
-    box-shadow:0 8px 28px rgba(0,0,0,.06);
-    margin-bottom:45px;
+    box-shadow:0 8px 26px rgba(0,0,0,.05);
+    margin-bottom:50px;
 }
 
 table{
@@ -151,7 +153,7 @@ th{
     text-align:left;
 }
 
-/* ================= CARD ================= */
+/* CARD */
 .grid{
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
@@ -159,10 +161,10 @@ th{
 }
 
 .card{
-    background:white;
+    background:#fff;
     border-radius:22px;
     overflow:hidden;
-    box-shadow:0 10px 25px rgba(0,0,0,.07);
+    box-shadow:0 10px 26px rgba(0,0,0,.07);
     transition:.25s;
 }
 
@@ -181,54 +183,53 @@ th{
 }
 
 .card h3{
-    margin-bottom:12px;
     font-size:24px;
+    margin-bottom:12px;
 }
 
 .desc{
     color:#666;
     line-height:1.6;
-    min-height:70px;
+    min-height:75px;
 }
 
 .price{
-    color:#e07f96;
+    color:#e48198;
     font-size:22px;
     font-weight:bold;
     margin:14px 0;
 }
 
 .slot{
-    background:#fff4f7;
+    background:#fff3f6;
     padding:14px;
     border-radius:14px;
-    margin-top:12px;
 }
 
 .btn{
-    margin-top:14px;
-    background:#f7c4d0;
-    border:none;
-    padding:12px 18px;
-    border-radius:14px;
-    cursor:pointer;
-    font-weight:bold;
     width:100%;
+    border:none;
+    margin-top:14px;
+    padding:13px;
+    border-radius:14px;
+    background:#f7c5d1;
+    font-weight:bold;
+    cursor:pointer;
 }
 
-/* ================= POPUP ================= */
+/* POPUP */
 .popup{
     position:fixed;
     inset:0;
-    background:rgba(0,0,0,.5);
+    background:rgba(0,0,0,.45);
     display:none;
     justify-content:center;
     align-items:center;
-    z-index:999;
+    z-index:9999;
 }
 
 .popup-content{
-    background:white;
+    background:#fff;
     width:760px;
     max-width:96%;
     border-radius:22px;
@@ -237,7 +238,7 @@ th{
 
 .close{
     float:right;
-    font-size:26px;
+    font-size:28px;
     cursor:pointer;
 }
 
@@ -245,7 +246,7 @@ th{
     display:grid;
     grid-template-columns:repeat(5,1fr);
     gap:12px;
-    margin:20px 0;
+    margin:22px 0;
 }
 
 .seat{
@@ -257,8 +258,8 @@ th{
 }
 
 .available{background:#ececec;}
-.selected{background:#f8c7d2;}
-.occupied{background:#777;color:white;cursor:not-allowed;}
+.selected{background:#f8c8d3;}
+.occupied{background:#777;color:#fff;cursor:not-allowed;}
 
 input[type=text],
 input[type=email]{
@@ -269,19 +270,30 @@ input[type=email]{
     margin-top:10px;
 }
 
+.payment-box{
+    background:#fff4f7;
+    padding:14px;
+    border-radius:14px;
+    margin:14px 0;
+    color:#d66b88;
+    font-weight:bold;
+    text-align:center;
+}
+
 .footer{
     margin-top:60px;
+    background:#fff;
     padding:25px;
     text-align:center;
-    background:white;
     color:#777;
 }
 </style>
 </head>
 <body>
 
-<!-- TOPBAR -->
+<!-- HEADER -->
 <div class="topbar">
+
 <div class="logo">CARPE DIEM</div>
 
 <div>
@@ -293,13 +305,14 @@ Xin chào <b><?= $user['Ten_khach_hang'] ?></b>
 <a href="dangky.php">Đăng ký</a>
 <?php endif; ?>
 </div>
+
 </div>
 
 <!-- HERO -->
 <section class="hero">
 <div class="hero-content">
 <h1>Workshop truyền cảm hứng</h1>
-<p>Khám phá nghệ thuật, tinh dầu, sáng tạo và chữa lành cùng Carpe Diem.</p>
+<p>Khám phá nghệ thuật, tinh dầu, chữa lành và sáng tạo cùng Carpe Diem.</p>
 <a href="#workshop" class="hero-btn">Khám phá ngay</a>
 </div>
 </section>
@@ -308,13 +321,15 @@ Xin chào <b><?= $user['Ten_khach_hang'] ?></b>
 
 <?php if($isLogin): ?>
 
+<!-- WORKSHOP ĐÃ ĐĂNG KÝ -->
 <div class="booked">
+
 <h2 class="title">Workshop bạn đã đăng ký</h2>
 
 <table>
 <tr>
 <th>Tên workshop</th>
-<th>Ngày</th>
+<th>Ngày học</th>
 <th>Ghế</th>
 <th>Thanh toán</th>
 </tr>
@@ -334,14 +349,16 @@ ORDER BY dk.Thoi_gian_tao DESC
 $rs = $conn->query($sql);
 
 if($rs && $rs->num_rows > 0):
+
 while($r = $rs->fetch_assoc()):
 
 $madk = $r['Ma_dang_ky'];
 $ghe = [];
 
-$get = $conn->query("SELECT So_ghe FROM chitietghe WHERE Ma_dang_ky='$madk' ORDER BY So_ghe ASC");
-while($x = $get->fetch_assoc()){
-$ghe[] = $x['So_ghe'];
+$getSeat = $conn->query("SELECT So_ghe FROM chitietghe WHERE Ma_dang_ky='$madk' ORDER BY So_ghe ASC");
+
+while($s = $getSeat->fetch_assoc()){
+$ghe[] = $s['So_ghe'];
 }
 ?>
 
@@ -355,15 +372,17 @@ $ghe[] = $x['So_ghe'];
 <?php endwhile; else: ?>
 
 <tr>
-<td colspan="4">Chưa có workshop nào</td>
+<td colspan="4">Chưa đăng ký workshop nào</td>
 </tr>
 
 <?php endif; ?>
+
 </table>
 </div>
 
 <?php endif; ?>
 
+<!-- DANH SÁCH WORKSHOP -->
 <h2 class="title" id="workshop">Khám phá Workshop</h2>
 
 <div class="grid">
@@ -381,7 +400,6 @@ $rs = $conn->query($sql);
 while($row = $rs->fetch_assoc()):
 
 $conlai = $row['So_luong_toi_da'] - $row['So_luong_da_dang_ky'];
-
 $img = !empty($row['Hinh_anh']) ? $row['Hinh_anh'] : 'assets/images/default.jpg';
 ?>
 
@@ -429,14 +447,14 @@ Chọn ghế ngay
 </div>
 </div>
 
-<!-- POPUP -->
+<!-- POPUP ĐẶT CHỖ -->
 <div class="popup" id="popup">
 
 <div class="popup-content">
 
 <span class="close" onclick="closePopup()">×</span>
 
-<h2>Đặt workshop</h2>
+<h2>Đăng ký workshop</h2>
 
 <form action="xuly_dangky.php" method="POST">
 
@@ -446,21 +464,25 @@ Chọn ghế ngay
 <div class="seat-grid" id="seat-grid"></div>
 
 <p>Ghế chọn: <b id="seatText">Chưa chọn</b></p>
-<p>Tạm tính: <b id="tongTien">0đ</b></p>
+<p>Tổng tiền: <b id="tongTien">0đ</b></p>
 
-<label><input type="radio" name="hinh_thuc_tt" value="50" checked> Thanh toán 50%</label>
-<label><input type="radio" name="hinh_thuc_tt" value="100"> Thanh toán 100%</label>
+<!-- CHỈ 100% -->
+<input type="hidden" name="hinh_thuc_tt" value="100">
+
+<div class="payment-box">
+💳 Thanh toán 100% giá trị đơn hàng
+</div>
 
 <input type="text" name="ten" placeholder="Họ tên"
 value="<?= $isLogin ? $user['Ten_khach_hang'] : '' ?>" required>
 
-<input type="text" name="sdt" placeholder="SĐT"
+<input type="text" name="sdt" placeholder="Số điện thoại"
 value="<?= $isLogin ? $user['So_dien_thoai'] : '' ?>" required>
 
 <input type="email" name="email" placeholder="Email"
 value="<?= $isLogin ? $user['Email'] : '' ?>" required>
 
-<button class="btn">Tiếp tục thanh toán</button>
+<button class="btn">Xác nhận đặt chỗ</button>
 
 </form>
 

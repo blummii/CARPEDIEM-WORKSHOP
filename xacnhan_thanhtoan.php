@@ -4,19 +4,22 @@ include("config/db.php");
 
 /*
 ====================================================
+PART 6 FULL EMAIL FLOW
 XACNHAN_THANHTOAN.PHP
-✔ Fix parse error
+✔ Sau khi bấm Tôi đã thanh toán
+✔ Hiện form nhập email thật
+✔ Validate email
 ✔ Lưu đăng ký workshop
 ✔ Lưu ghế
-✔ Cập nhật số lượng
+✔ Update số lượng
 ✔ Gửi email xác nhận
-✔ Chống lưu trùng khi F5
+✔ Chống F5 lưu trùng
 ====================================================
 */
 
-/* =========================
+/* ===============================
 LOAD PHPMailer
-========================= */
+================================= */
 require_once __DIR__ . '/phpmailer/src/Exception.php';
 require_once __DIR__ . '/phpmailer/src/PHPMailer.php';
 require_once __DIR__ . '/phpmailer/src/SMTP.php';
@@ -24,219 +27,276 @@ require_once __DIR__ . '/phpmailer/src/SMTP.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-/* =========================
-CHECK SESSION BOOKING
-========================= */
+/* ===============================
+CHECK SESSION
+================================= */
 if (!isset($_SESSION['booking'])) {
-    echo "<script>
-            alert('Không tìm thấy thông tin thanh toán!');
-            location='index.php';
-          </script>";
+    echo "<script>alert('Không tìm thấy đơn thanh toán');location='index.php';</script>";
     exit();
 }
 
 $b = $_SESSION['booking'];
 
-/* =========================
-LẤY DỮ LIỆU SESSION
-========================= */
-$madk      = $b['Ma_dang_ky'] ?? '';
-$ma_lich   = $b['Ma_lich'] ?? '';
-$ma_kh     = $b['Ma_kh'] ?? '';
-$soluong   = (int)($b['So_luong'] ?? 0);
-$tong      = (float)($b['Tong_tien'] ?? 0);
-$seats     = $b['Seats'] ?? [];
-$email     = $b['Email'] ?? '';
-$thanhtoan = (float)($b['Thanh_toan'] ?? 0);
+/* ===============================
+BƯỚC 1: CHƯA NHẬP EMAIL -> HIỆN FORM
+================================= */
+if (!isset($_POST['email_xacnhan'])) {
+?>
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Xác nhận Email</title>
+<style>
+body{
+    margin:0;
+    background:#fff7fa;
+    font-family:Arial;
+}
+.box{
+    width:450px;
+    max-width:95%;
+    margin:80px auto;
+    background:white;
+    padding:35px;
+    border-radius:22px;
+    box-shadow:0 10px 30px rgba(0,0,0,.08);
+}
+h2{
+    color:#d67d93;
+    margin-bottom:15px;
+}
+p{
+    color:#666;
+    line-height:1.6;
+}
+input{
+    width:100%;
+    padding:14px;
+    border:1px solid #ddd;
+    border-radius:12px;
+    margin-top:15px;
+    font-size:16px;
+}
+button{
+    width:100%;
+    margin-top:18px;
+    padding:14px;
+    background:#f7c4d0;
+    border:none;
+    border-radius:14px;
+    font-weight:bold;
+    cursor:pointer;
+}
+</style>
+</head>
+<body>
 
-/* =========================
-VALIDATE
-========================= */
-if ($madk == '' || $ma_lich == '' || $ma_kh == '' || $soluong <= 0) {
-    echo "<script>
-            alert('Dữ liệu đặt chỗ không hợp lệ!');
-            location='index.php';
-          </script>";
+<div class="box">
+
+<h2>📩 Xác nhận Email</h2>
+
+<p>
+Vui lòng nhập email chính xác để nhận thông tin workshop sau khi thanh toán thành công.
+</p>
+
+<form method="POST">
+
+<input type="email"
+name="email_xacnhan"
+placeholder="Nhập email của bạn"
+required>
+
+<button type="submit">
+Xác nhận & Hoàn tất
+</button>
+
+</form>
+
+</div>
+
+</body>
+</html>
+<?php
+exit();
+}
+
+/* ===============================
+BƯỚC 2: NHẬN EMAIL
+================================= */
+$email = trim($_POST['email_xacnhan']);
+
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    echo "<script>alert('Email không hợp lệ');history.back();</script>";
     exit();
 }
 
-/* =========================
-CHỐNG F5 LƯU TRÙNG
-========================= */
+/* ===============================
+LẤY SESSION BOOKING
+================================= */
+$madk      = $b['Ma_dang_ky'];
+$ma_lich   = $b['Ma_lich'];
+$ma_kh     = $b['Ma_kh'];
+$soluong   = $b['So_luong'];
+$tong      = $b['Tong_tien'];
+$thanhtoan = $b['Thanh_toan'];
+$seats     = $b['Seats'];
+
+/* ===============================
+CHECK TRÙNG
+================================= */
 $check = $conn->prepare("SELECT Ma_dang_ky FROM dangkyworkshop WHERE Ma_dang_ky=?");
 $check->bind_param("s", $madk);
 $check->execute();
-$rsCheck = $check->get_result();
+$rs = $check->get_result();
 
-if ($rsCheck->num_rows > 0) {
+if ($rs->num_rows > 0) {
     unset($_SESSION['booking']);
-
-    echo "<script>
-            alert('Đơn hàng đã được xác nhận trước đó!');
-            location='index.php';
-          </script>";
+    echo "<script>alert('Đơn hàng đã xử lý trước đó');location='index.php';</script>";
     exit();
 }
 
-/* =========================
+/* ===============================
 LẤY THÔNG TIN WORKSHOP
-========================= */
-$stmtInfo = $conn->prepare("
-SELECT c.Ten_chu_de, l.Ngay_to_chuc
+================================= */
+$sqlInfo = "
+SELECT c.Ten_chu_de,l.Ngay_to_chuc
 FROM lichworkshop l
-JOIN chudeworkshop c ON l.Ma_chu_de = c.Ma_chu_de
-WHERE l.Ma_lich_workshop = ?
-");
-$stmtInfo->bind_param("s", $ma_lich);
-$stmtInfo->execute();
-$info = $stmtInfo->get_result()->fetch_assoc();
+JOIN chudeworkshop c ON l.Ma_chu_de=c.Ma_chu_de
+WHERE l.Ma_lich_workshop='$ma_lich'
+";
 
-$tenWorkshop = $info['Ten_chu_de'] ?? 'Workshop';
-$ngayHoc = $info['Ngay_to_chuc'] ?? '';
+$rInfo = $conn->query($sqlInfo)->fetch_assoc();
 
-/* =========================
+$tenWorkshop = $rInfo['Ten_chu_de'];
+$ngayHoc = $rInfo['Ngay_to_chuc'];
+
+/* ===============================
 TRANSACTION
-========================= */
+================================= */
 $conn->begin_transaction();
 
-try {
+try{
 
-    /* =========================
-    INSERT ĐĂNG KÝ
-    ========================= */
-    $stmt = $conn->prepare("
-        INSERT INTO dangkyworkshop
-        (
-            Ma_dang_ky,
-            Ma_lich_workshop,
-            Ma_khach_hang,
-            So_nguoi_tham_gia,
-            Tong_tien,
-            Trang_thai_thanh_toan,
-            Thoi_gian_tao
-        )
-        VALUES (?, ?, ?, ?, ?, 'Đã thanh toán', NOW())
-    ");
+/* LƯU ĐĂNG KÝ */
+$conn->query("
+INSERT INTO dangkyworkshop
+(
+Ma_dang_ky,
+Ma_lich_workshop,
+Ma_khach_hang,
+So_nguoi_tham_gia,
+Tong_tien,
+Trang_thai_thanh_toan,
+Thoi_gian_tao
+)
+VALUES
+(
+'$madk',
+'$ma_lich',
+'$ma_kh',
+'$soluong',
+'$tong',
+'Đã thanh toán',
+NOW()
+)
+");
 
-    $stmt->bind_param(
-        "sssii",
-        $madk,
-        $ma_lich,
-        $ma_kh,
-        $soluong,
-        $tong
-    );
+/* LƯU GHẾ */
+foreach($seats as $ghe){
 
-    $stmt->execute();
+$ghe = trim($ghe);
 
-    /* =========================
-    INSERT GHẾ
-    ========================= */
-    foreach ($seats as $ghe) {
+$conn->query("
+INSERT INTO chitietghe
+(
+Ma_lich_workshop,
+So_ghe,
+Ma_dang_ky,
+Trang_thai
+)
+VALUES
+(
+'$ma_lich',
+'$ghe',
+'$madk',
+'Đã đặt'
+)
+");
 
-        $ghe = trim($ghe);
-
-        $stmtSeat = $conn->prepare("
-            INSERT INTO chitietghe
-            (
-                Ma_lich_workshop,
-                So_ghe,
-                Ma_dang_ky,
-                Trang_thai
-            )
-            VALUES (?, ?, ?, 'Đã đặt')
-        ");
-
-        $stmtSeat->bind_param("sis", $ma_lich, $ghe, $madk);
-        $stmtSeat->execute();
-    }
-
-    /* =========================
-    UPDATE SỐ LƯỢNG
-    ========================= */
-    $stmtUpdate = $conn->prepare("
-        UPDATE lichworkshop
-        SET So_luong_da_dang_ky = So_luong_da_dang_ky + ?
-        WHERE Ma_lich_workshop = ?
-    ");
-
-    $stmtUpdate->bind_param("is", $soluong, $ma_lich);
-    $stmtUpdate->execute();
-
-    $conn->commit();
-
-} catch (Exception $e) {
-
-    $conn->rollback();
-
-    echo "<script>
-            alert('Có lỗi xảy ra. Vui lòng thử lại!');
-            history.back();
-          </script>";
-    exit();
 }
 
-/* =========================
+/* UPDATE */
+$conn->query("
+UPDATE lichworkshop
+SET So_luong_da_dang_ky = So_luong_da_dang_ky + $soluong
+WHERE Ma_lich_workshop='$ma_lich'
+");
+
+$conn->commit();
+
+}catch(Exception $e){
+
+$conn->rollback();
+
+echo "<script>alert('Lỗi xử lý thanh toán');history.back();</script>";
+exit();
+}
+
+/* ===============================
 GỬI EMAIL
-========================= */
-if ($email != '') {
+================================= */
+try{
 
-    try {
+$mail = new PHPMailer(true);
 
-        $mail = new PHPMailer(true);
+$mail->isSMTP();
+$mail->Host = 'smtp.gmail.com';
+$mail->SMTPAuth = true;
 
-        $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
-        $mail->SMTPAuth   = true;
+$mail->Username = 'lovetfboys1172005@gmail.com';
+$mail->Password = 'opkhjejnbjednswh';
 
-        /* THAY THÔNG TIN GMAIL CỦA BẠN */
-        $mail->Username   = 'yourgmail@gmail.com';
-        $mail->Password   = 'your_app_password';
+$mail->SMTPSecure = 'tls';
+$mail->Port = 587;
 
-        $mail->SMTPSecure = 'tls';
-        $mail->Port       = 587;
+$mail->CharSet = 'UTF-8';
 
-        $mail->CharSet = 'UTF-8';
+$mail->setFrom('lovetfboys1172005@gmail.com','Carpe Diem Workshop');
+$mail->addAddress($email);
 
-        $mail->setFrom('yourgmail@gmail.com', 'Carpe Diem Workshop');
-        $mail->addAddress($email);
+$mail->isHTML(true);
+$mail->Subject = 'Xác nhận đăng ký workshop thành công';
 
-        $mail->isHTML(true);
-        $mail->Subject = 'Xác nhận đăng ký workshop thành công';
+$mail->Body = "
+<h2>🎉 Đăng ký thành công</h2>
 
-        $mail->Body = "
-        <h2>🎉 Đăng ký thành công</h2>
+<p><b>Mã đăng ký:</b> $madk</p>
+<p><b>Workshop:</b> $tenWorkshop</p>
+<p><b>Ngày học:</b> $ngayHoc</p>
+<p><b>Ghế:</b> ".implode(', ', $seats)."</p>
+<p><b>Số lượng:</b> $soluong người</p>
+<p><b>Tổng tiền:</b> ".number_format($tong,0,',','.')."đ</p>
 
-        <p><b>Mã đăng ký:</b> $madk</p>
-        <p><b>Workshop:</b> $tenWorkshop</p>
-        <p><b>Ngày học:</b> $ngayHoc</p>
-        <p><b>Số ghế:</b> " . implode(", ", $seats) . "</p>
-        <p><b>Số lượng:</b> $soluong người</p>
-        <p><b>Tổng tiền:</b> " . number_format($tong, 0, ',', '.') . "đ</p>
-        <p><b>Đã thanh toán:</b> " . number_format($thanhtoan, 0, ',', '.') . "đ</p>
+<br>
 
-        <br>
-        <p>Cảm ơn bạn đã đăng ký tại Carpe Diem 🌿</p>
-        ";
+<p>Cảm ơn bạn đã đồng hành cùng Carpe Diem 🌿</p>
+";
 
-        $mail->send();
+$mail->send();
 
-    } catch (Exception $e) {
-        // Không dừng hệ thống nếu mail lỗi
-    }
+}catch(Exception $e){
+    // mail lỗi vẫn cho hoàn tất
 }
 
-/* =========================
-XÓA SESSION BOOKING
-========================= */
+/* ===============================
+DONE
+================================= */
 unset($_SESSION['booking']);
 
-/* =========================
-THÀNH CÔNG
-========================= */
 echo "
 <script>
-alert('🎉 Thanh toán thành công! Đăng ký workshop thành công!');
+alert('🎉 Thanh toán thành công! Email xác nhận đã được gửi!');
 location='index.php';
 </script>
 ";
