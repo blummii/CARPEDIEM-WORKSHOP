@@ -3,33 +3,23 @@ session_start();
 include("config/db.php");
 require_once __DIR__ . '/includes/workshop_date.php';
 
-/*
-====================================================
-INDEX.PHP CHUẨN ĐỒ ÁN 9-10 ĐIỂM
-✔ Giao diện đẹp
-✔ Hiển thị workshop
-✔ Popup chọn ghế
-✔ Ghế trống / đã đặt
-✔ Chỉ thanh toán 100%
-✔ Tự tính tiền
-✔ Form thông tin khách hàng
-✔ Hiển thị workshop đã đăng ký
-====================================================
-*/
-
 $isLogin = isset($_SESSION['user']);
 $user = $isLogin ? $_SESSION['user'] : null;
 ?>
+
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Carpe Diem Workshop</title>
 
 <link rel="stylesheet" href="assets/style.css">
 
 <style>
+
 *{
     margin:0;
     padding:0;
@@ -38,39 +28,47 @@ $user = $isLogin ? $_SESSION['user'] : null;
 
 body{
     font-family:Arial, Helvetica, sans-serif;
-    background:#fff8fa;
+    background:#f5f7fb;
     color:#333;
 }
 
-/* HEADER */
+/* ================= HEADER ================= */
+
 .topbar{
-    background:#fff;
-    padding:16px 6%;
+    width:100%;
+    background:white;
+    padding:18px 6%;
     display:flex;
     justify-content:space-between;
     align-items:center;
-    box-shadow:0 4px 18px rgba(0,0,0,.06);
+    box-shadow:0 2px 12px rgba(0,0,0,.05);
     position:sticky;
     top:0;
     z-index:999;
 }
 
 .logo{
-    font-size:24px;
+    font-size:30px;
     font-weight:bold;
-    color:#e48aa1;
+    color:#ff6b9d;
 }
 
-.topbar a{
+.menu{
+    display:flex;
+    align-items:center;
+    gap:18px;
+}
+
+.menu a{
     text-decoration:none;
     color:#333;
-    margin-left:15px;
     font-weight:600;
 }
 
-/* HERO */
+/* ================= HERO ================= */
+
 .hero{
-    height:500px;
+    height:520px;
     background:url('assets/images/banner.jpg') center/cover no-repeat;
     position:relative;
     display:flex;
@@ -81,91 +79,107 @@ body{
     content:'';
     position:absolute;
     inset:0;
-    background:rgba(0,0,0,.35);
+    background:rgba(0,0,0,.45);
 }
 
 .hero-content{
     position:relative;
     z-index:2;
-    color:white;
-    width:90%;
-    max-width:1200px;
-    margin:auto;
-}
-
-.hero h1{
-    font-size:56px;
-    margin-bottom:15px;
-}
-
-.hero p{
-    font-size:20px;
-    line-height:1.7;
-    max-width:650px;
-}
-
-.hero-btn{
-    display:inline-block;
-    margin-top:25px;
-    padding:14px 28px;
-    border-radius:30px;
-    background:#f8c8d3;
-    text-decoration:none;
-    color:#333;
-    font-weight:bold;
-}
-
-/* MAIN */
-.container{
     width:90%;
     max-width:1300px;
     margin:auto;
-    padding:55px 0;
+    color:white;
 }
 
-.title{
-    font-size:34px;
-    color:#d47d94;
+.hero-content h1{
+    font-size:60px;
+    margin-bottom:18px;
+}
+
+.hero-content p{
+    width:650px;
+    max-width:100%;
+    font-size:20px;
+    line-height:1.7;
+}
+
+.hero-btn{
+    margin-top:30px;
+    display:inline-block;
+    background:#ffbfd0;
+    color:#333;
+    text-decoration:none;
+    padding:16px 30px;
+    border-radius:40px;
+    font-weight:bold;
+}
+
+/* ================= CONTAINER ================= */
+
+.container{
+    width:90%;
+    max-width:1450px;
+    margin:auto;
+    padding:60px 0;
+}
+
+/* ================= SECTION ================= */
+
+.section{
+    margin-bottom:70px;
+}
+
+.section-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
     margin-bottom:28px;
 }
 
-/* TABLE */
-.booked{
-    background:#fff;
-    padding:28px;
-    border-radius:22px;
-    box-shadow:0 8px 26px rgba(0,0,0,.05);
-    margin-bottom:50px;
+.section-title{
+    font-size:42px;
+    font-weight:bold;
 }
 
-table{
-    width:100%;
-    border-collapse:collapse;
+.view-more{
+    background:#d9f4f4;
+    color:#2d9198;
+    padding:12px 24px;
+    border-radius:18px;
+    text-decoration:none;
+    font-weight:bold;
 }
 
-th,td{
-    padding:14px;
-    border-bottom:1px solid #eee;
-}
+/* ================= WORKSHOP ROW ================= */
 
-th{
-    background:#fff2f5;
-    text-align:left;
-}
-
-/* CARD */
-.grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+.workshop-row{
+    display:flex;
     gap:28px;
+    overflow-x:auto;
+    padding-bottom:12px;
+    scroll-behavior:smooth;
 }
+
+.workshop-row::-webkit-scrollbar{
+    height:8px;
+}
+
+.workshop-row::-webkit-scrollbar-thumb{
+    background:#ddd;
+    border-radius:20px;
+}
+
+/* ================= CARD ================= */
 
 .card{
-    background:#fff;
-    border-radius:22px;
+    min-width:360px;
+    max-width:360px;
+    background:white;
+    border-radius:24px;
     overflow:hidden;
-    box-shadow:0 10px 26px rgba(0,0,0,.07);
+    box-shadow:0 5px 22px rgba(0,0,0,.06);
     transition:.25s;
+    flex-shrink:0;
 }
 
 .card:hover{
@@ -179,49 +193,87 @@ th{
 }
 
 .card-body{
-    padding:22px;
+    padding:24px;
 }
 
-.card h3{
+.card-title{
     font-size:24px;
+    font-weight:bold;
+    color:#b47d84;
     margin-bottom:12px;
 }
 
 .desc{
     color:#666;
-    line-height:1.6;
-    min-height:75px;
+    line-height:1.7;
+    height:58px;
+    overflow:hidden;
 }
 
 .price{
-    color:#e48198;
-    font-size:22px;
+    color:#ff5f92;
+    font-size:24px;
     font-weight:bold;
-    margin:14px 0;
+    margin:24px 0;
 }
 
-.slot{
-    background:#fff3f6;
-    padding:14px;
-    border-radius:14px;
+.info-box{
+    background:#fff2f6;
+    padding:16px;
+    border-radius:16px;
+    line-height:2;
+    font-size:17px;
 }
 
 .btn{
     width:100%;
     border:none;
-    margin-top:14px;
-    padding:13px;
-    border-radius:14px;
-    background:#f7c5d1;
+    padding:15px;
+    margin-top:20px;
+    border-radius:16px;
+    background:#f6b7c9;
+    color:#7c2c41;
     font-weight:bold;
+    font-size:17px;
     cursor:pointer;
+    transition:.2s;
 }
 
-/* POPUP */
+.btn:hover{
+    opacity:.9;
+}
+
+/* ================= BOOKED ================= */
+
+.booked-box{
+    background:white;
+    padding:30px;
+    border-radius:24px;
+    margin-bottom:60px;
+    box-shadow:0 5px 22px rgba(0,0,0,.05);
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th, td{
+    padding:14px;
+    border-bottom:1px solid #eee;
+    text-align:left;
+}
+
+th{
+    background:#fff2f6;
+}
+
+/* ================= POPUP ================= */
+
 .popup{
     position:fixed;
     inset:0;
-    background:rgba(0,0,0,.45);
+    background:rgba(0,0,0,.6);
     display:none;
     justify-content:center;
     align-items:center;
@@ -229,178 +281,305 @@ th{
 }
 
 .popup-content{
-    background:#fff;
     width:760px;
-    max-width:96%;
-    border-radius:22px;
-    padding:28px;
+    max-width:95%;
+    background:white;
+    border-radius:24px;
+    padding:30px;
+    position:relative;
 }
 
 .close{
-    float:right;
-    font-size:28px;
+    position:absolute;
+    right:22px;
+    top:12px;
+    font-size:30px;
     cursor:pointer;
 }
+
+.popup-title{
+    font-size:34px;
+    margin-bottom:25px;
+}
+
+/* ================= SEAT ================= */
 
 .seat-grid{
     display:grid;
     grid-template-columns:repeat(5,1fr);
     gap:12px;
-    margin:22px 0;
+    margin-bottom:25px;
 }
 
 .seat{
-    padding:12px;
+    padding:14px;
     text-align:center;
     border-radius:12px;
     font-weight:bold;
     cursor:pointer;
 }
 
-.available{background:#ececec;}
-.selected{background:#f8c8d3;}
-.occupied{background:#777;color:#fff;cursor:not-allowed;}
+.available{
+    background:#ececec;
+}
 
-input[type=text],
-input[type=email]{
+.selected{
+    background:#ffbfd0;
+}
+
+.occupied{
+    background:#999;
+    color:white;
+    cursor:not-allowed;
+}
+
+.summary{
+    margin:18px 0;
+    line-height:2;
+    font-size:17px;
+}
+
+.pay-box{
+    background:#fff2f6;
+    padding:16px;
+    border-radius:16px;
+    margin-bottom:16px;
+}
+
+input{
     width:100%;
-    padding:12px;
+    padding:14px;
     border:1px solid #ddd;
-    border-radius:12px;
-    margin-top:10px;
+    border-radius:14px;
+    margin-top:12px;
 }
 
-.payment-box{
-    background:#fff4f7;
-    padding:14px;
-    border-radius:14px;
-    margin:14px 0;
-    color:#d66b88;
-    font-weight:bold;
-    text-align:center;
-}
+/* ================= FOOTER ================= */
 
 .footer{
-    margin-top:60px;
-    background:#fff;
-    padding:25px;
+    margin-top:70px;
+    background:white;
     text-align:center;
+    padding:26px;
     color:#777;
 }
+
+/* ================= MOBILE ================= */
+
+@media(max-width:768px){
+
+.hero{
+    height:380px;
+}
+
+.hero-content h1{
+    font-size:40px;
+}
+
+.section-title{
+    font-size:30px;
+}
+
+.card{
+    min-width:300px;
+    max-width:300px;
+}
+
+}
+
 </style>
 </head>
+
 <body>
 
-<!-- HEADER -->
+<!-- ================= HEADER ================= -->
+
 <div class="topbar">
 
-<div class="logo">CARPE DIEM</div>
+<div class="logo">
+CARPE DIEM
+</div>
 
-<div>
+<div class="menu">
+
 <?php if($isLogin): ?>
+
+<span>
 Xin chào <b><?= $user['Ten_khach_hang'] ?></b>
-<a href="logout.php">Đăng xuất</a>
+</span>
+
+<a href="logout.php">
+Đăng xuất
+</a>
+
 <?php else: ?>
-<a href="dangnhap.php">Đăng nhập</a>
-<a href="dangky.php">Đăng ký</a>
+
+<a href="dangnhap.php">
+Đăng nhập
+</a>
+
+<a href="dangky.php">
+Đăng ký
+</a>
+
 <?php endif; ?>
-</div>
 
 </div>
+</div>
 
-<!-- HERO -->
+<!-- ================= HERO ================= -->
+
 <section class="hero">
+
 <div class="hero-content">
-<h1>Workshop truyền cảm hứng</h1>
-<p>Khám phá nghệ thuật, tinh dầu, chữa lành và sáng tạo cùng Carpe Diem.</p>
-<a href="#workshop" class="hero-btn">Khám phá ngay</a>
+
+<h1>
+Workshop truyền cảm hứng
+</h1>
+
+<p>
+Khám phá nghệ thuật, sáng tạo và chữa lành
+cùng những workshop độc đáo tại Carpe Diem.
+</p>
+
+<a href="#workshop-section" class="hero-btn">
+Khám phá ngay
+</a>
+
 </div>
 </section>
 
+<!-- ================= CONTENT ================= -->
+
 <div class="container">
+
+<!-- ================= ĐÃ ĐĂNG KÝ ================= -->
 
 <?php if($isLogin): ?>
 
-<!-- WORKSHOP ĐÃ ĐĂNG KÝ -->
-<div class="booked">
+<div class="booked-box">
 
-<h2 class="title">Workshop bạn đã đăng ký</h2>
+<h2 class="section-title" style="margin-bottom:20px;">
+Workshop đã đăng ký
+</h2>
 
 <table>
+
 <tr>
-<th>Tên workshop</th>
+<th>Workshop</th>
 <th>Ngày học</th>
 <th>Ghế</th>
 <th>Thanh toán</th>
 </tr>
 
 <?php
+
 $ma_kh = $user['Ma_khach_hang'];
 
-$sql = "
+$sqlBooked = "
 SELECT dk.*, c.Ten_chu_de, l.Ngay_to_chuc
 FROM dangkyworkshop dk
-JOIN lichworkshop l ON dk.Ma_lich_workshop=l.Ma_lich_workshop
-JOIN chudeworkshop c ON c.Ma_chu_de=l.Ma_chu_de
-WHERE dk.Ma_khach_hang='$ma_kh'
+JOIN lichworkshop l
+ON dk.Ma_lich_workshop = l.Ma_lich_workshop
+JOIN chudeworkshop c
+ON l.Ma_chu_de = c.Ma_chu_de
+WHERE dk.Ma_khach_hang = '$ma_kh'
 ORDER BY dk.Thoi_gian_tao DESC
 ";
 
-$rs = $conn->query($sql);
+$rsBooked = $conn->query($sqlBooked);
 
-if($rs && $rs->num_rows > 0):
+if($rsBooked && $rsBooked->num_rows > 0):
 
-while($r = $rs->fetch_assoc()):
+while($b = $rsBooked->fetch_assoc()):
 
-$madk = $r['Ma_dang_ky'];
+$madk = $b['Ma_dang_ky'];
+
 $ghe = [];
 
-$getSeat = $conn->query("SELECT So_ghe FROM chitietghe WHERE Ma_dang_ky='$madk' ORDER BY So_ghe ASC");
+$getSeat = $conn->query("
+SELECT So_ghe
+FROM chitietghe
+WHERE Ma_dang_ky='$madk'
+");
 
 while($s = $getSeat->fetch_assoc()){
-$ghe[] = $s['So_ghe'];
+    $ghe[] = $s['So_ghe'];
 }
+
 ?>
 
 <tr>
-<td><?= $r['Ten_chu_de'] ?></td>
-<td><?= workshop_fmt_ngay_vn($r['Ngay_to_chuc']) ?></td>
+
+<td><?= $b['Ten_chu_de'] ?></td>
+
+<td><?= workshop_fmt_ngay_vn($b['Ngay_to_chuc']) ?></td>
+
 <td><?= implode(", ", $ghe) ?></td>
-<td><?= $r['Trang_thai_thanh_toan'] ?></td>
+
+<td><?= $b['Trang_thai_thanh_toan'] ?></td>
+
 </tr>
 
 <?php endwhile; else: ?>
 
 <tr>
-<td colspan="4">Chưa đăng ký workshop nào</td>
+<td colspan="4">
+Bạn chưa đăng ký workshop nào
+</td>
 </tr>
 
 <?php endif; ?>
 
 </table>
+
 </div>
 
 <?php endif; ?>
 
-<!-- DANH SÁCH WORKSHOP -->
-<h2 class="title" id="workshop">Khám phá Workshop</h2>
+<!-- ================= WORKSHOP ================= -->
 
-<div class="grid">
+<div class="section" id="workshop-section">
+
+<div class="section-top">
+
+<h2 class="section-title">
+Workshop đang diễn ra
+</h2>
+
+
+</div>
+
+<div class="workshop-row">
 
 <?php
+
 $sql = "
 SELECT c.*, l.*
 FROM chudeworkshop c
-JOIN lichworkshop l ON c.Ma_chu_de=l.Ma_chu_de
+JOIN lichworkshop l
+ON c.Ma_chu_de = l.Ma_chu_de
 ORDER BY l.Ngay_to_chuc ASC
 ";
 
 $rs = $conn->query($sql);
 
+$shownWorkshop = [];
+
 while($row = $rs->fetch_assoc()):
 
+if(in_array($row['Ma_chu_de'], $shownWorkshop)){
+    continue;
+}
+
+$shownWorkshop[] = $row['Ma_chu_de'];
+
 $conlai = $row['So_luong_toi_da'] - $row['So_luong_da_dang_ky'];
-$img = !empty($row['Hinh_anh']) ? $row['Hinh_anh'] : 'assets/images/default.jpg';
+
+$img = !empty($row['Hinh_anh'])
+? $row['Hinh_anh']
+: 'assets/images/default.jpg';
+
 ?>
 
 <div class="card">
@@ -409,33 +588,47 @@ $img = !empty($row['Hinh_anh']) ? $row['Hinh_anh'] : 'assets/images/default.jpg'
 
 <div class="card-body">
 
-<h3><?= $row['Ten_chu_de'] ?></h3>
+<div class="card-title">
+<?= $row['Ten_chu_de'] ?>
+</div>
 
-<p class="desc"><?= $row['Mo_ta'] ?></p>
+<div class="desc">
+<?= $row['Mo_ta'] ?>
+</div>
 
 <div class="price">
 <?= number_format($row['Gia'],0,",",".") ?>đ
 </div>
 
-<div class="slot">
-📅 <?= workshop_fmt_ngay_vn($row['Ngay_to_chuc']) ?><br>
+<div class="info-box">
+
+📅 <?= workshop_fmt_ngay_vn($row['Ngay_to_chuc']) ?>
+
+<br>
+
 🪑 Còn <?= $conlai ?> chỗ
+
 </div>
 
 <?php if($conlai > 0): ?>
 
 <button class="btn"
+
 onclick="openPopup(
 '<?= $row['Ma_lich_workshop'] ?>',
 <?= $row['So_luong_toi_da'] ?>,
 <?= $row['Gia'] ?>
 )">
-Chọn ghế ngay
+
+Đặt workshop
+
 </button>
 
 <?php else: ?>
 
-<button class="btn" disabled>Đã hết chỗ</button>
+<button class="btn" disabled>
+Đã hết chỗ
+</button>
 
 <?php endif; ?>
 
@@ -447,47 +640,83 @@ Chọn ghế ngay
 </div>
 </div>
 
-<!-- POPUP ĐẶT CHỖ -->
+</div>
+
+<!-- ================= POPUP ================= -->
+
 <div class="popup" id="popup">
 
 <div class="popup-content">
 
 <span class="close" onclick="closePopup()">×</span>
 
-<h2>Đăng ký workshop</h2>
+<h2 class="popup-title">
+Đăng ký Workshop
+</h2>
 
 <form action="xuly_dangky.php" method="POST">
 
 <input type="hidden" name="id_lich" id="id_lich">
-<input type="hidden" name="selected_seats" id="selected_seats">
+
+<input type="hidden"
+name="selected_seats"
+id="selected_seats">
 
 <div class="seat-grid" id="seat-grid"></div>
 
-<p>Ghế chọn: <b id="seatText">Chưa chọn</b></p>
-<p>Tổng tiền: <b id="tongTien">0đ</b></p>
+<div class="summary">
 
-<!-- CHỈ 100% -->
-<input type="hidden" name="hinh_thuc_tt" value="100">
+<p>
+Ghế đã chọn:
+<b id="seatText">Chưa chọn</b>
+</p>
 
-<div class="payment-box">
-💳 Thanh toán 100% giá trị đơn hàng
+<p>
+Tổng tiền:
+<b id="tongTien">0đ</b>
+</p>
+
 </div>
 
-<input type="text" name="ten" placeholder="Họ tên"
-value="<?= $isLogin ? $user['Ten_khach_hang'] : '' ?>" required>
+<div class="pay-box">
 
-<input type="text" name="sdt" placeholder="Số điện thoại"
-value="<?= $isLogin ? $user['So_dien_thoai'] : '' ?>" required>
+<b>Thanh toán:</b>
+100% giá trị đơn hàng
 
-<input type="email" name="email" placeholder="Email"
-value="<?= $isLogin ? $user['Email'] : '' ?>" required>
+<input type="hidden"
+name="hinh_thuc_tt"
+value="100">
 
-<button class="btn">Xác nhận đặt chỗ</button>
+</div>
+
+<input type="text"
+name="ten"
+placeholder="Họ tên"
+value="<?= $isLogin ? $user['Ten_khach_hang'] : '' ?>"
+required>
+
+<input type="text"
+name="sdt"
+placeholder="Số điện thoại"
+value="<?= $isLogin ? $user['So_dien_thoai'] : '' ?>"
+required>
+
+<input type="email"
+name="email"
+placeholder="Email"
+value="<?= $isLogin ? $user['Email'] : '' ?>"
+required>
+
+<button class="btn">
+Xác nhận đặt chỗ
+</button>
 
 </form>
 
 </div>
 </div>
+
+<!-- ================= FOOTER ================= -->
 
 <div class="footer">
 © 2026 Carpe Diem Workshop
