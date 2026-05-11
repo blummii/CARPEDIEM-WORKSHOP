@@ -51,11 +51,12 @@ $workshopActiveTopics = 0;
 $workshopUpcomingSchedules = 0;
 $workshopRegistrationsMonth = 0;
 $workshopRevenue = 0.0;
+$paidOrderStatusesSql = "'confirmed','shipped','completed'";
 
 if (isset($conn) && $conn instanceof mysqli) {
     workshop_ensure_schema($conn);
 
-    $r = $conn->query("SELECT COALESCE(SUM(Tong_tien), 0) AS s FROM DonHang WHERE Trang_thai = 'completed'");
+    $r = $conn->query("SELECT COALESCE(SUM(Tong_tien), 0) AS s FROM DonHang WHERE Trang_thai IN ($paidOrderStatusesSql)");
     if ($r && ($row = $r->fetch_assoc())) {
         $totalRevenue = (float)$row['s'];
     }
@@ -107,14 +108,14 @@ if (isset($conn) && $conn instanceof mysqli) {
         }
     }
 
-    $sql = 'SELECT sp.Ten_san_pham, SUM(ct.So_luong) AS qty
+    $sql = "SELECT sp.Ten_san_pham, SUM(ct.So_luong) AS qty
             FROM ChiTietDonHang ct
             INNER JOIN SanPham sp ON sp.Ma_san_pham = ct.Ma_san_pham
             INNER JOIN DonHang dh ON dh.Ma_don_hang = ct.Ma_don_hang
-            WHERE dh.Trang_thai = \'completed\'
+            WHERE dh.Trang_thai IN ($paidOrderStatusesSql)
             GROUP BY ct.Ma_san_pham, sp.Ten_san_pham
             ORDER BY qty DESC
-            LIMIT 6';
+            LIMIT 6";
     $r = $conn->query($sql);
     if ($r) {
         while ($row = $r->fetch_assoc()) {
@@ -124,7 +125,7 @@ if (isset($conn) && $conn instanceof mysqli) {
 
     $sql = "SELECT DATE_FORMAT(Thoi_gian_tao, '%Y-%m') AS ym, COALESCE(SUM(Tong_tien), 0) AS rev
             FROM DonHang
-            WHERE Trang_thai = 'completed'
+            WHERE Trang_thai IN ($paidOrderStatusesSql)
             AND Thoi_gian_tao >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 11 MONTH)
             GROUP BY ym
             ORDER BY ym ASC";
@@ -184,7 +185,7 @@ $chartHasData = array_sum($chartValues) > 0;
 		<div class="card">
 			<div class="card-title">TỔNG DOANH THU</div>
 			<div class="card-value"><?php echo htmlspecialchars(dash_money($totalRevenue)); ?></div>
-			<div class="card-note" style="font-size:12px;color:#a88;margin-top:6px;">Chỉ các đơn trạng thái hoàn thành</div>
+			<div class="card-note" style="font-size:12px;color:#a88;margin-top:6px;">Gồm đơn đã xác nhận, đang giao và hoàn thành</div>
 		</div>
 		<div class="card">
 			<div class="card-title">ĐƠN HÀNG MỚI</div>
@@ -235,7 +236,7 @@ $chartHasData = array_sum($chartValues) > 0;
 				<div class="dash-chart-canvas-wrap">
 					<canvas id="revenueMonthChart" aria-label="Biểu đồ doanh thu theo tháng" role="img"></canvas>
 				</div>
-				<p style="margin:10px 0 0;font-size:12px;color:#a88;">Đơn vị: VND · Chỉ tính đơn đã hoàn thành.</p>
+				<p style="margin:10px 0 0;font-size:12px;color:#a88;">Đơn vị: VND · Tính đơn đã xác nhận/đang giao/hoàn thành.</p>
 			<?php endif; ?>
 		</div>
 		<div class="panel panel-stats">
